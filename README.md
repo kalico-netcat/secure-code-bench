@@ -54,6 +54,28 @@ cases:
 
 V1 supports two deterministic scorers: `contains` and `regex`.
 
+## KEV code samples
+
+Generate a suite from accepted samples in the local KEV code sample collector:
+
+```bash
+secure-code-bench kev-suite \
+  --samples-root /path/to/kev-code-samples/samples \
+  --output examples/kev.yml
+```
+
+Run the generated suite like any other benchmark:
+
+```bash
+secure-code-bench run examples/kev.yml --model openai/gpt-4.1-mini
+```
+
+The generated prompts show only the `vulnerable.*` file. `metadata.json` and `evidence.md`
+are used only to build broad deterministic regex scorers.
+
+`examples/kev.yml` is a template showing the generated structure. Regenerate it with your
+local samples path before running it.
+
 ## Environment
 
 The CLI automatically loads `.env` from the current working directory before calling

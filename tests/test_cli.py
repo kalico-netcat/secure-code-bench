@@ -37,6 +37,7 @@ cases:
     )
 
     assert result.exit_code == 0
+    assert "[1/1] openai/test-model :: case-1 ..." in result.output
+    assert "done" in result.output
     assert "1/1 passed" in result.output
     assert output_path.exists()
-

@@ -36,3 +36,35 @@ cases:
     assert len(results) == 2
     assert all(result.passed for result in results)
 
+
+def test_run_suite_reports_progress_events(tmp_path: Path) -> None:
+    (tmp_path / "sample.py").write_text("query = user_input\n", encoding="utf-8")
+    suite_path = tmp_path / "suite.yml"
+    suite_path.write_text(
+        """
+name: test
+cases:
+  - id: case-1
+    prompt: "{file:sample.py}"
+    code_files:
+      - sample.py
+    scorers:
+      - type: contains
+        value: SQL injection
+""",
+        encoding="utf-8",
+    )
+    events = []
+
+    suite = load_suite(suite_path)
+    run_suite(
+        suite,
+        ["model-a"],
+        FakeProvider(),
+        progress=lambda event, model, current, total: events.append((event, model, current, total)),
+    )
+
+    assert events == [
+        ("start", "model-a", 1, 1),
+        ("finish", "model-a", 1, 1),
+    ]

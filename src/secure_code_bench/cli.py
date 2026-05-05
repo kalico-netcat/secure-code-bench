@@ -68,12 +68,18 @@ def kev_suite(
     ),
     status: str = typer.Option("accepted", help="Sample metadata status to include, or 'all'."),
     limit: Optional[int] = typer.Option(None, help="Optional maximum number of samples to include."),
+    anonymize: bool = typer.Option(
+        True,
+        "--anonymize",
+        help="Use neutral case IDs and omit source identifiers from generated prompts.",
+    ),
 ) -> None:
     output_path, suite = write_kev_suite(
         samples_root=samples_root,
         output=output,
         status=status,
         limit=limit,
+        anonymize=anonymize,
     )
     typer.echo(f"Wrote {len(suite.cases)} KEV benchmark case(s) to {output_path}")
 

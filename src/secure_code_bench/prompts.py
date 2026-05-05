@@ -18,12 +18,24 @@ def render_prompt(suite: BenchmarkSuite, case: BenchmarkCase) -> str:
 
     def replace(match: re.Match[str]) -> str:
         raw_path = match.group(1).strip()
-        if declared_files and raw_path not in declared_files:
+        if raw_path.isdigit():
+            file_index = int(raw_path)
+            try:
+                file_path = case.code_files[file_index]
+            except IndexError as exc:
+                raise PromptRenderError(
+                    f"Case {case.id!r} references file index {file_index}, "
+                    f"but only {len(case.code_files)} code file(s) are declared."
+                ) from exc
+            file_path = file_path if file_path.is_absolute() else suite_dir / file_path
+        elif declared_files and raw_path not in declared_files:
             raise PromptRenderError(
                 f"Case {case.id!r} references {raw_path!r}, but it is not listed in code_files."
             )
+        else:
+            file_path = suite_dir / raw_path
 
-        file_path = (suite_dir / raw_path).resolve()
+        file_path = file_path.resolve()
         try:
             content = file_path.read_text(encoding="utf-8")
         except FileNotFoundError as exc:
@@ -50,4 +62,3 @@ def _language_for(path: Path) -> str:
         ".php": "php",
     }
     return suffix_map.get(path.suffix.lower(), "")
-

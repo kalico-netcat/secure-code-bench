@@ -64,14 +64,18 @@ secure-code-bench kev-suite \
   --output examples/kev.yml
 ```
 
+KEV suites are anonymized by default: generated prompts omit CVE IDs, sample IDs,
+repository names, and affected file paths. The YAML still contains `code_files` paths so the
+runner can load local files, but those paths are replaced with code before calling the model.
+
 Run the generated suite like any other benchmark:
 
 ```bash
 secure-code-bench run examples/kev.yml --model openai/gpt-4.1-mini
 ```
 
-The generated prompts show only the `vulnerable.*` file. `metadata.json` and `evidence.md`
-are used only to build broad deterministic regex scorers.
+The generated prompts show only the `vulnerable.*` file contents. `metadata.json` and
+`evidence.md` are used only to build broad deterministic regex scorers.
 
 `examples/kev.yml` is a template showing the generated structure. Regenerate it with your
 local samples path before running it.

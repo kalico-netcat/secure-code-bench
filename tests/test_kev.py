@@ -46,7 +46,7 @@ def test_build_kev_suite_generates_valid_cases_and_scorers(tmp_path: Path) -> No
     suite = build_kev_suite(tmp_path)
 
     assert suite.name == "KEV code samples (accepted)"
-    assert suite.cases[0].id == "CVE-2020-11023-jquery-sample"
+    assert suite.cases[0].id == "kev-sample-0001"
     assert suite.cases[0].code_files[0].is_absolute()
     assert any(scorer.type == "regex" for scorer in suite.cases[0].scorers)
 
@@ -67,7 +67,39 @@ def test_write_kev_suite_yaml_loads_and_renders_absolute_code_file(tmp_path: Pat
     rendered = render_prompt(suite, suite.cases[0])
 
     assert "function run(input)" in rendered
-    assert str(sample_root / "vulnerable.js") in suite.cases[0].prompt
+    assert "{file:0}" in suite.cases[0].prompt
+    assert str(sample_root / "vulnerable.js") not in suite.cases[0].prompt
+
+
+def test_generated_kev_prompt_omits_source_identifiers(tmp_path: Path) -> None:
+    sample_root = _sample(
+        tmp_path,
+        cve_id="CVE-2020-11023",
+        sample_id="jquery-jquery-90fed4b-manipulation",
+        status="accepted",
+        vulnerable_name="vulnerable.js",
+        extraction_notes="The vulnerable HTML prefilter can allow cross-site scripting.",
+    )
+
+    suite = build_kev_suite(tmp_path)
+    case = suite.cases[0]
+    rendered = render_prompt(suite, case)
+    prompt_without_placeholder = case.prompt.split("{file:", 1)[0]
+
+    assert case.id == "kev-sample-0001"
+    assert "CVE-" not in prompt_without_placeholder
+    assert "CVE-" not in case.prompt
+    assert "jquery" not in prompt_without_placeholder.lower()
+    assert "jquery" not in case.prompt.lower()
+    assert "90fed4b" not in prompt_without_placeholder
+    assert "90fed4b" not in case.prompt
+    assert "src/example.file" not in prompt_without_placeholder
+    assert "src/example.file" not in case.prompt
+    assert str(sample_root) not in prompt_without_placeholder
+    assert str(sample_root) not in case.prompt
+    assert "CVE-" not in rendered
+    assert "jquery-jquery-90fed4b-manipulation" not in rendered
+    assert "src/example.file" not in rendered
 
 
 def test_generated_kev_regex_scorers_match_representative_response(tmp_path: Path) -> None:
@@ -111,7 +143,7 @@ def test_kev_suite_cli_writes_yaml(monkeypatch, tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "1 KEV benchmark case" in result.output
     data = yaml.safe_load(output.read_text(encoding="utf-8"))
-    assert data["cases"][0]["id"] == "CVE-2025-49113-roundcube-sample"
+    assert data["cases"][0]["id"] == "kev-sample-0001"
 
 
 def _sample(

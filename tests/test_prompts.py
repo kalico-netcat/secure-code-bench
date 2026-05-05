@@ -50,3 +50,25 @@ cases:
     with pytest.raises(PromptRenderError):
         render_prompt(suite, suite.cases[0])
 
+
+def test_render_prompt_supports_code_file_indexes(tmp_path: Path) -> None:
+    sample = tmp_path / "sample.py"
+    sample.write_text("print('indexed')\n", encoding="utf-8")
+    suite_path = tmp_path / "suite.yml"
+    suite_path.write_text(
+        """
+name: test
+cases:
+  - id: case-1
+    prompt: "Review this:\\n{file:0}"
+    code_files:
+      - sample.py
+    scorers: []
+""",
+        encoding="utf-8",
+    )
+
+    suite = load_suite(suite_path)
+    rendered = render_prompt(suite, suite.cases[0])
+
+    assert "print('indexed')" in rendered

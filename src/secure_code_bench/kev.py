@@ -99,9 +99,13 @@ def build_kev_suite(
     samples_root: Path,
     status: str = "accepted",
     limit: Optional[int] = None,
+    anonymize: bool = True,
 ) -> BenchmarkSuite:
     samples = discover_kev_samples(samples_root=samples_root, status=status, limit=limit)
-    cases = [_case_from_sample(sample) for sample in samples]
+    cases = [
+        _case_from_sample(sample, index=index, anonymize=anonymize)
+        for index, sample in enumerate(samples, start=1)
+    ]
     return BenchmarkSuite(name=f"KEV code samples ({status})", cases=cases)
 
 
@@ -110,30 +114,48 @@ def write_kev_suite(
     output: Path,
     status: str = "accepted",
     limit: Optional[int] = None,
+    anonymize: bool = True,
 ) -> tuple[Path, BenchmarkSuite]:
-    suite = build_kev_suite(samples_root=samples_root, status=status, limit=limit)
+    suite = build_kev_suite(
+        samples_root=samples_root,
+        status=status,
+        limit=limit,
+        anonymize=anonymize,
+    )
     output_path = output.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(_suite_to_yaml(suite), encoding="utf-8")
     return output_path, suite
 
 
-def _case_from_sample(sample: KevSample) -> BenchmarkCase:
+def _case_from_sample(sample: KevSample, index: int, anonymize: bool) -> BenchmarkCase:
     language = str(sample.metadata.get("language") or _language_name(sample.vulnerable_path))
-    affected_files = sample.metadata.get("affected_files") or []
-    affected = ", ".join(str(path) for path in affected_files) or sample.vulnerable_path.name
+    prompt = _prompt_for_sample(sample=sample, language=language, anonymize=anonymize)
+    file_placeholder = "0" if anonymize else str(sample.vulnerable_path)
     prompt = (
-        "Review the vulnerable code sample below. Identify the likely security vulnerability, "
-        "explain the impact, and describe the safer fix direction.\n\n"
-        f"Language: {language}\n"
-        f"Affected file: {affected}\n\n"
-        f"{{file:{sample.vulnerable_path}}}"
+        f"{prompt}\n\n"
+        f"{{file:{file_placeholder}}}"
     )
     return BenchmarkCase(
-        id=_case_id(sample),
+        id=_case_id(sample, index=index, anonymize=anonymize),
         prompt=prompt,
         code_files=[sample.vulnerable_path],
         scorers=_scorers_for(sample),
+    )
+
+
+def _prompt_for_sample(sample: KevSample, language: str, anonymize: bool) -> str:
+    if anonymize:
+        return (
+            "Review the code sample below. Identify the likely security vulnerability, "
+            "explain the impact, and describe the safer fix direction.\n\n"
+            f"Language: {language}"
+        )
+
+    return (
+        "Review the vulnerable code sample below. Identify the likely security vulnerability, "
+        "explain the impact, and describe the safer fix direction.\n\n"
+        f"Language: {language}"
     )
 
 
@@ -197,7 +219,10 @@ def _load_metadata(path: Path) -> dict[str, Any]:
     return data
 
 
-def _case_id(sample: KevSample) -> str:
+def _case_id(sample: KevSample, index: int, anonymize: bool) -> str:
+    if anonymize:
+        return f"kev-sample-{index:04d}"
+
     raw = f"{sample.cve_id}-{sample.sample_id}"
     normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "-", raw).strip("-")
     return normalized or sample.root.name
@@ -221,5 +246,3 @@ def _language_name(path: Path) -> str:
         ".php": "php",
     }
     return suffixes.get(path.suffix.lower(), path.suffix.lstrip("."))
-
-

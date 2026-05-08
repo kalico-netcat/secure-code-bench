@@ -35,6 +35,9 @@ class BenchmarkSuite(BaseModel):
 class RunOptions(BaseModel):
     temperature: float = 0.0
     max_tokens: Optional[int] = None
+    retries: int = 0
+    continue_on_error: bool = False
+    limit: Optional[int] = None
 
 
 class ScoreResult(BaseModel):

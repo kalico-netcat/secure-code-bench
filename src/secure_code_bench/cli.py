@@ -38,16 +38,30 @@ def run(
     ),
     temperature: float = typer.Option(0.0, help="Sampling temperature for model calls."),
     max_tokens: Optional[int] = typer.Option(None, help="Optional response token limit."),
+    timeout: float = typer.Option(180.0, help="HTTP timeout in seconds for each model request."),
+    retries: int = typer.Option(1, help="Retries per model/case request after the first attempt."),
+    limit: Optional[int] = typer.Option(None, help="Maximum number of suite cases to run per model."),
+    continue_on_error: bool = typer.Option(
+        False,
+        "--continue-on-error",
+        help="Record failed model calls and keep running the remaining cases.",
+    ),
 ) -> None:
     load_dotenv()
     benchmark_suite = load_suite(suite)
-    provider = OpenRouterProvider()
+    provider = OpenRouterProvider(timeout=timeout)
     results = run_suite(
         benchmark_suite,
         models=model,
         provider=provider,
-        options=RunOptions(temperature=temperature, max_tokens=max_tokens),
-        progress=_progress_callback(benchmark_suite),
+        options=RunOptions(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            retries=retries,
+            continue_on_error=continue_on_error,
+            limit=limit,
+        ),
+        progress=_progress_callback(benchmark_suite, limit=limit),
     )
     output_path = write_jsonl(output, results)
     _print_summary(results, output_path)
@@ -98,8 +112,8 @@ def _print_summary(results: list, output_path: Path) -> None:
         typer.echo(f"{model}: {passed}/{total} passed")
 
 
-def _progress_callback(benchmark_suite):
-    ordered_cases = benchmark_suite.cases
+def _progress_callback(benchmark_suite, limit: Optional[int] = None):
+    ordered_cases = benchmark_suite.cases[:limit] if limit is not None else benchmark_suite.cases
 
     def callback(event: str, model: str, current: int, total: int) -> None:
         case = ordered_cases[(current - 1) % len(ordered_cases)]

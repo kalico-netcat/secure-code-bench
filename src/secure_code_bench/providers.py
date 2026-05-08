@@ -25,19 +25,21 @@ class OpenRouterProvider:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         client: Optional[httpx.Client] = None,
+        timeout: float = 60,
     ) -> None:
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         self.base_url = (base_url or os.environ.get("OPENROUTER_BASE_URL") or OPENROUTER_BASE_URL).rstrip(
             "/"
         )
-        self.client = client or httpx.Client(timeout=60)
+        self.client = client or httpx.Client(timeout=timeout)
 
     def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
         if not self.api_key:
             raise ProviderError("OPENROUTER_API_KEY is required to call OpenRouter models.")
 
+        request_model = normalize_openrouter_model_id(model)
         payload: dict[str, object] = {
-            "model": model,
+            "model": request_model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": options.temperature,
         }
@@ -64,3 +66,9 @@ class OpenRouterProvider:
             raise ProviderError(f"Unexpected model response shape for {model}: {data}") from exc
 
         return ModelResponse(text=text, raw=data)
+
+
+def normalize_openrouter_model_id(model: str) -> str:
+    if model.startswith("~") or not model.endswith("-latest"):
+        return model
+    return f"~{model}"

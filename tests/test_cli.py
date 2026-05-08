@@ -7,7 +7,13 @@ from secure_code_bench.models import ModelResponse, RunOptions
 
 
 class FakeProvider:
+    def __init__(self, timeout: float = 60) -> None:
+        self.timeout = timeout
+
     def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        assert options.retries == 2
+        assert options.continue_on_error is True
+        assert options.limit == 1
         return ModelResponse(text="SQL injection should use parameterized queries")
 
 
@@ -29,11 +35,25 @@ cases:
         encoding="utf-8",
     )
     output_path = tmp_path / "out.jsonl"
-    monkeypatch.setattr(cli, "OpenRouterProvider", lambda: FakeProvider())
+    monkeypatch.setattr(cli, "OpenRouterProvider", lambda timeout=60: FakeProvider(timeout=timeout))
 
     result = CliRunner().invoke(
         cli.app,
-        ["run", str(suite_path), "--model", "openai/test-model", "--output", str(output_path)],
+        [
+            "run",
+            str(suite_path),
+            "--model",
+            "openai/test-model",
+            "--output",
+            str(output_path),
+            "--timeout",
+            "300",
+            "--retries",
+            "2",
+            "--limit",
+            "1",
+            "--continue-on-error",
+        ],
     )
 
     assert result.exit_code == 0

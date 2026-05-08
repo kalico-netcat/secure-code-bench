@@ -30,6 +30,25 @@ secure-code-bench run examples/basic.yml --model openai/gpt-4.1-mini
 
 Results are written as JSONL, with one record per case/model pair.
 
+For slower models, increase the request timeout and keep going after individual failures:
+
+```bash
+secure-code-bench run examples/kev.yml \
+  --model anthropic/claude-opus-4.7 \
+  --model openai/gpt-5.5 \
+  --limit 3 \
+  --timeout 300 \
+  --retries 2 \
+  --continue-on-error
+```
+
+For OpenRouter `latest` aliases, omit the leading `~`; the runner adds it when sending
+requests:
+
+```bash
+secure-code-bench run examples/basic.yml --model anthropic/claude-sonnet-latest
+```
+
 ## Suite format
 
 Suites are YAML files with a name and cases. Cases can inject code files into prompts with

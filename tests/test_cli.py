@@ -12,7 +12,6 @@ class FakeProvider:
 
     def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
         assert options.retries == 2
-        assert options.continue_on_error is True
         assert options.limit == 1
         return ModelResponse(text="SQL injection should use parameterized queries")
 
@@ -52,7 +51,6 @@ cases:
             "2",
             "--limit",
             "1",
-            "--continue-on-error",
         ],
     )
 
@@ -61,3 +59,15 @@ cases:
     assert "done" in result.output
     assert "1/1 passed" in result.output
     assert output_path.exists()
+
+
+def test_cli_run_help_shows_defaults() -> None:
+    result = CliRunner().invoke(cli.app, ["run", "--help"])
+
+    assert result.exit_code == 0
+    assert "[default: 3]" in result.output
+    assert "[default: 600.0]" in result.output
+    assert "--continue-on-error" not in result.output
+    assert "--judge" in result.output
+    assert "openai/gpt-mini-latest" in result.output
+    assert "--prompt-assumption" in CliRunner().invoke(cli.app, ["kev-suite", "--help"]).output

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import typer
 
@@ -38,13 +38,13 @@ def run(
     ),
     temperature: float = typer.Option(0.0, help="Sampling temperature for model calls."),
     max_tokens: Optional[int] = typer.Option(None, help="Optional response token limit."),
-    timeout: float = typer.Option(180.0, help="HTTP timeout in seconds for each model request."),
-    retries: int = typer.Option(1, help="Retries per model/case request after the first attempt."),
+    timeout: float = typer.Option(600.0, help="HTTP timeout in seconds for each model request."),
+    retries: int = typer.Option(3, help="Retries per model/case request after the first attempt."),
     limit: Optional[int] = typer.Option(None, help="Maximum number of suite cases to run per model."),
-    continue_on_error: bool = typer.Option(
-        False,
-        "--continue-on-error",
-        help="Record failed model calls and keep running the remaining cases.",
+    judge: bool = typer.Option(False, "--judge", help="Use a hidden rubric and judge model for scoring."),
+    judge_model: str = typer.Option(
+        "openai/gpt-mini-latest",
+        help="Model to use when --judge is enabled.",
     ),
 ) -> None:
     load_dotenv()
@@ -58,8 +58,9 @@ def run(
             temperature=temperature,
             max_tokens=max_tokens,
             retries=retries,
-            continue_on_error=continue_on_error,
             limit=limit,
+            judge=judge,
+            judge_model=judge_model,
         ),
         progress=_progress_callback(benchmark_suite, limit=limit),
     )
@@ -87,15 +88,38 @@ def kev_suite(
         "--anonymize",
         help="Use neutral case IDs and omit source identifiers from generated prompts.",
     ),
+    prompt_assumption: Literal["may-be-safe", "known-vulnerable", "both"] = typer.Option(
+        "may-be-safe",
+        "--prompt-assumption",
+        help="Prompt prior to give models, or 'both' to write paired suites.",
+    ),
 ) -> None:
+    if prompt_assumption == "both":
+        for assumption in ("may-be-safe", "known-vulnerable"):
+            output_path, suite = write_kev_suite(
+                samples_root=samples_root,
+                output=_paired_output_path(output, assumption),
+                status=status,
+                limit=limit,
+                anonymize=anonymize,
+                prompt_assumption=assumption,
+            )
+            typer.echo(f"Wrote {len(suite.cases)} KEV benchmark case(s) to {output_path}")
+        return
+
     output_path, suite = write_kev_suite(
         samples_root=samples_root,
         output=output,
         status=status,
         limit=limit,
         anonymize=anonymize,
+        prompt_assumption=prompt_assumption,
     )
     typer.echo(f"Wrote {len(suite.cases)} KEV benchmark case(s) to {output_path}")
+
+
+def _paired_output_path(output: Path, assumption: str) -> Path:
+    return output.with_name(f"{output.stem}-{assumption}{output.suffix or '.yml'}")
 
 
 def _print_summary(results: list, output_path: Path) -> None:

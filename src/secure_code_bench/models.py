@@ -15,6 +15,24 @@ class ScorerConfig(BaseModel):
     case_sensitive: bool = False
 
 
+class AcceptanceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min_overall: float = 0.75
+    required_dimensions: list[str] = Field(default_factory=lambda: ["vulnerability_type", "code_evidence"])
+    min_dimension_score: float = 1.0
+
+
+class JudgeRubric(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    vulnerability_type: str
+    impact: str
+    code_evidence: str
+    fix_direction: str
+    notes: Optional[str] = None
+
+
 class BenchmarkCase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -22,6 +40,8 @@ class BenchmarkCase(BaseModel):
     prompt: str
     code_files: list[Path] = Field(default_factory=list)
     scorers: list[ScorerConfig] = Field(default_factory=list)
+    acceptance: Optional[AcceptanceConfig] = None
+    rubric: Optional[JudgeRubric] = None
 
 
 class BenchmarkSuite(BaseModel):
@@ -36,14 +56,25 @@ class RunOptions(BaseModel):
     temperature: float = 0.0
     max_tokens: Optional[int] = None
     retries: int = 0
-    continue_on_error: bool = False
     limit: Optional[int] = None
+    judge: bool = False
+    judge_model: str = "openai/gpt-mini-latest"
 
 
 class ScoreResult(BaseModel):
     name: str
     passed: bool
+    score: Optional[float] = None
+    max_score: Optional[float] = None
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class AcceptanceResult(BaseModel):
+    mode: Literal["deterministic", "judge"]
+    passed: bool
+    overall: Optional[float] = None
+    required_dimensions_met: Optional[bool] = None
+    reason: str = ""
 
 
 class ModelResponse(BaseModel):
@@ -59,4 +90,5 @@ class RunResult(BaseModel):
     response: str
     scores: list[ScoreResult]
     passed: bool
+    acceptance: Optional[AcceptanceResult] = None
     metadata: dict[str, Any] = Field(default_factory=dict)

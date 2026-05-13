@@ -4,10 +4,12 @@ from collections.abc import Sequence
 import time
 from typing import Callable, Optional
 
-from secure_code_bench.models import BenchmarkSuite, RunOptions, RunResult
+from secure_code_bench.models import BenchmarkSuite, RunOptions, RunResult, ScoreResult
 from secure_code_bench.prompts import render_prompt
 from secure_code_bench.providers import ChatProvider
 from secure_code_bench.scorers import score_response
+from secure_code_bench.judge import score_with_judge
+from secure_code_bench.acceptance import accept_deterministic, accept_judge
 
 
 def run_suite(
@@ -34,27 +36,49 @@ def run_suite(
             except Exception as exc:
                 if progress is not None:
                     progress("error", model, current, total)
-                if run_options.continue_on_error:
-                    results.append(
-                        RunResult(
-                            suite=suite.name,
-                            case_id=case.id,
-                            model=model,
-                            prompt=prompt,
-                            response="",
-                            scores=[],
-                            passed=False,
-                            metadata={
-                                "error": str(exc),
-                                "error_type": type(exc).__name__,
-                                "score_count": 0,
-                            },
-                        )
+                results.append(
+                    RunResult(
+                        suite=suite.name,
+                        case_id=case.id,
+                        model=model,
+                        prompt=prompt,
+                        response="",
+                        scores=[],
+                        passed=False,
+                        acceptance=accept_deterministic([]),
+                        metadata={
+                            "error": str(exc),
+                            "error_type": type(exc).__name__,
+                            "score_count": 0,
+                        },
                     )
-                    continue
-                raise
+                )
+                continue
             scores = score_response(model_response.text, case.scorers)
-            passed = bool(scores) and all(score.passed for score in scores)
+            judge_score: Optional[ScoreResult] = None
+            if run_options.judge:
+                try:
+                    judge_score = score_with_judge(
+                        provider=provider,
+                        judge_model=run_options.judge_model,
+                        case=case,
+                        response=model_response.text,
+                        options=run_options,
+                    )
+                except Exception as exc:
+                    judge_score = ScoreResult(
+                        name="llm_judge",
+                        passed=False,
+                        score=0.0,
+                        max_score=1.0,
+                        details={"error": str(exc), "error_type": type(exc).__name__},
+                    )
+                scores.append(judge_score)
+            acceptance = (
+                accept_judge(judge_score, case.acceptance)
+                if judge_score is not None
+                else accept_deterministic(scores)
+            )
             results.append(
                 RunResult(
                     suite=suite.name,
@@ -63,7 +87,8 @@ def run_suite(
                     prompt=prompt,
                     response=model_response.text,
                     scores=scores,
-                    passed=passed,
+                    passed=acceptance.passed,
+                    acceptance=acceptance,
                     metadata={"score_count": len(scores)},
                 )
             )

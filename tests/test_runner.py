@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from secure_code_bench.models import ModelResponse, RunOptions
+from secure_code_bench.models import AcceptanceConfig, JudgeRubric, ModelResponse, RunOptions
 from secure_code_bench.runner import run_suite
 from secure_code_bench.suites import load_suite
 
@@ -24,6 +24,34 @@ class FlakyProvider:
 class FailingProvider:
     def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
         raise RuntimeError("permanent failure")
+
+
+class JudgeProvider:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        self.calls.append((model, prompt))
+        if model == "judge-model":
+            return ModelResponse(
+                text=(
+                    '{"vulnerability_type":1,"impact":1,"code_evidence":1,'
+                    '"fix_direction":1,"overall":1.0,"reason":"correct"}'
+                )
+            )
+        return ModelResponse(text="The issue is command injection with a clear fix.")
+
+
+class PartialJudgeProvider:
+    def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        if model == "judge-model":
+            return ModelResponse(
+                text=(
+                    '{"vulnerability_type":1,"impact":1,"code_evidence":0,'
+                    '"fix_direction":1,"overall":0.9,"reason":"misses evidence"}'
+                )
+            )
+        return ModelResponse(text="The issue is command injection.")
 
 
 def test_run_suite_scores_each_model_and_case(tmp_path: Path) -> None:
@@ -51,6 +79,8 @@ cases:
 
     assert len(results) == 2
     assert all(result.passed for result in results)
+    assert all(result.acceptance is not None for result in results)
+    assert all(result.acceptance.mode == "deterministic" for result in results if result.acceptance is not None)
 
 
 def test_run_suite_reports_progress_events(tmp_path: Path) -> None:
@@ -101,14 +131,13 @@ def test_run_suite_retries_failed_model_call(tmp_path: Path) -> None:
     assert results[0].passed is True
 
 
-def test_run_suite_can_continue_on_error(tmp_path: Path) -> None:
+def test_run_suite_records_error_and_continues(tmp_path: Path) -> None:
     suite = _one_case_suite(tmp_path)
 
     results = run_suite(
         suite,
         ["model-a"],
         FailingProvider(),
-        options=RunOptions(continue_on_error=True),
     )
 
     assert len(results) == 1
@@ -134,6 +163,58 @@ def test_run_suite_limits_cases_per_model(tmp_path: Path) -> None:
     assert [result.case_id for result in results] == ["case-1", "case-2", "case-1", "case-2"]
     assert events[0] == ("start", "model-a", 1, 4)
     assert events[-1] == ("finish", "model-b", 4, 4)
+
+
+def test_run_suite_uses_judge_score_when_enabled(tmp_path: Path) -> None:
+    suite = _one_case_suite(tmp_path)
+    suite.cases[0].rubric = JudgeRubric(
+        vulnerability_type="command injection",
+        impact="attacker can execute commands",
+        code_evidence="user input reaches command execution",
+        fix_direction="sanitize input and avoid shell execution",
+    )
+    provider = JudgeProvider()
+
+    results = run_suite(
+        suite,
+        ["tested-model"],
+        provider,
+        options=RunOptions(judge=True, judge_model="judge-model"),
+    )
+
+    assert results[0].passed is True
+    assert results[0].acceptance is not None
+    assert results[0].acceptance.mode == "judge"
+    assert results[0].acceptance.required_dimensions_met is True
+    assert results[0].scores[-1].name == "llm_judge"
+    assert results[0].scores[-1].details["overall"] == 1.0
+    assert provider.calls[0][0] == "tested-model"
+    assert provider.calls[1][0] == "judge-model"
+
+
+def test_run_suite_requires_judge_dimensions_even_with_high_overall(tmp_path: Path) -> None:
+    suite = _one_case_suite(tmp_path)
+    suite.cases[0].rubric = JudgeRubric(
+        vulnerability_type="command injection",
+        impact="attacker can execute commands",
+        code_evidence="user input reaches command execution",
+        fix_direction="sanitize input and avoid shell execution",
+    )
+    suite.cases[0].acceptance = AcceptanceConfig()
+
+    results = run_suite(
+        suite,
+        ["tested-model"],
+        PartialJudgeProvider(),
+        options=RunOptions(judge=True, judge_model="judge-model"),
+    )
+
+    assert results[0].passed is False
+    assert results[0].acceptance is not None
+    assert results[0].acceptance.mode == "judge"
+    assert results[0].acceptance.overall == 0.9
+    assert results[0].acceptance.required_dimensions_met is False
+    assert "code_evidence" in results[0].acceptance.reason
 
 
 def _one_case_suite(tmp_path: Path):

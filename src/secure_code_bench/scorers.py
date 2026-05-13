@@ -23,6 +23,8 @@ def _score_one(response: str, scorer: ScorerConfig) -> ScoreResult:
         return ScoreResult(
             name="contains",
             passed=passed,
+            score=1.0 if passed else 0.0,
+            max_score=1.0,
             details={"value": scorer.value, "case_sensitive": scorer.case_sensitive},
         )
 
@@ -34,8 +36,9 @@ def _score_one(response: str, scorer: ScorerConfig) -> ScoreResult:
         return ScoreResult(
             name="regex",
             passed=match is not None,
+            score=1.0 if match is not None else 0.0,
+            max_score=1.0,
             details={"pattern": scorer.pattern, "case_sensitive": scorer.case_sensitive},
         )
 
     raise ScorerError(f"Unsupported scorer type: {scorer.type}")
-

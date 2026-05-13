@@ -45,10 +45,70 @@ def test_build_kev_suite_generates_valid_cases_and_scorers(tmp_path: Path) -> No
 
     suite = build_kev_suite(tmp_path)
 
-    assert suite.name == "KEV code samples (accepted)"
+    assert suite.name == "KEV code samples (accepted, may-be-safe)"
     assert suite.cases[0].id == "kev-sample-0001"
     assert suite.cases[0].code_files[0].is_absolute()
     assert any(scorer.type == "regex" for scorer in suite.cases[0].scorers)
+    assert suite.cases[0].acceptance is not None
+    assert suite.cases[0].acceptance.required_dimensions == ["vulnerability_type", "code_evidence"]
+    assert suite.cases[0].rubric is not None
+    assert suite.cases[0].rubric.vulnerability_type == "cross-site scripting"
+
+
+def test_build_kev_suite_uses_vulnerable_slot_but_label_may_be_safe(tmp_path: Path) -> None:
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0001",
+        sample_id="vulnerable-item",
+        status="accepted",
+        vulnerable_name="vulnerable.c",
+        is_vulnerable=True,
+        item_kind="vulnerable",
+    )
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0002",
+        sample_id="safe-item",
+        status="accepted",
+        vulnerable_name="vulnerable.c",
+        is_vulnerable=False,
+        item_kind="vulnerable",
+    )
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0003",
+        sample_id="fixed-reference",
+        status="accepted",
+        vulnerable_name="fixed.c",
+        is_vulnerable=False,
+        item_kind="fixed",
+    )
+
+    suite = build_kev_suite(tmp_path)
+
+    assert len(suite.cases) == 2
+    assert [case.code_files[0].name for case in suite.cases] == ["vulnerable.c", "vulnerable.c"]
+    assert suite.cases[1].rubric is not None
+    assert suite.cases[1].rubric.vulnerability_type == "no concrete vulnerability"
+    assert "not vulnerab" in suite.cases[1].scorers[0].pattern
+
+
+def test_kev_prompt_assumption_controls_model_facing_prior(tmp_path: Path) -> None:
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-11023",
+        sample_id="jquery-sample",
+        status="accepted",
+        vulnerable_name="vulnerable.js",
+    )
+
+    may_be_safe = build_kev_suite(tmp_path, prompt_assumption="may-be-safe")
+    known_vulnerable = build_kev_suite(tmp_path, prompt_assumption="known-vulnerable")
+
+    assert "It is possible there is no vulnerability" in may_be_safe.cases[0].prompt
+    assert "say None for the vulnerability" in may_be_safe.cases[0].prompt
+    assert "known to contain a security vulnerability" in known_vulnerable.cases[0].prompt
+    assert "It is possible there is no vulnerability" not in known_vulnerable.cases[0].prompt
 
 
 def test_write_kev_suite_yaml_loads_and_renders_absolute_code_file(tmp_path: Path) -> None:
@@ -137,13 +197,64 @@ def test_kev_suite_cli_writes_yaml(monkeypatch, tmp_path: Path) -> None:
 
     result = CliRunner().invoke(
         app,
-        ["kev-suite", "--samples-root", str(tmp_path), "--output", str(output)],
+        [
+            "kev-suite",
+            "--samples-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--prompt-assumption",
+            "known-vulnerable",
+        ],
     )
 
     assert result.exit_code == 0
     assert "1 KEV benchmark case" in result.output
     data = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert data["name"] == "KEV code samples (accepted, known-vulnerable)"
     assert data["cases"][0]["id"] == "kev-sample-0001"
+    assert "known to contain a security vulnerability" in data["cases"][0]["prompt"]
+    assert data["cases"][0]["acceptance"]["required_dimensions"] == ["vulnerability_type", "code_evidence"]
+    assert "rubric" in data["cases"][0]
+
+
+def test_kev_suite_cli_can_write_both_prompt_assumptions(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from secure_code_bench.cli import app
+
+    _sample(
+        tmp_path,
+        cve_id="CVE-2025-49113",
+        sample_id="roundcube-sample",
+        status="accepted",
+        vulnerable_name="vulnerable.php",
+    )
+    output = tmp_path / "kev.yml"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "kev-suite",
+            "--samples-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--prompt-assumption",
+            "both",
+        ],
+    )
+
+    may_be_safe = tmp_path / "kev-may-be-safe.yml"
+    known_vulnerable = tmp_path / "kev-known-vulnerable.yml"
+    assert result.exit_code == 0
+    assert may_be_safe.exists()
+    assert known_vulnerable.exists()
+    assert "Wrote 1 KEV benchmark case(s)" in result.output
+    may_be_safe_data = yaml.safe_load(may_be_safe.read_text(encoding="utf-8"))
+    known_vulnerable_data = yaml.safe_load(known_vulnerable.read_text(encoding="utf-8"))
+    assert "It is possible there is no vulnerability" in may_be_safe_data["cases"][0]["prompt"]
+    assert "known to contain a security vulnerability" in known_vulnerable_data["cases"][0]["prompt"]
 
 
 def _sample(
@@ -156,31 +267,41 @@ def _sample(
     vulnerable_code: str = "dangerous();\n",
     extraction_notes: str = "This vulnerable code needs input validation.",
     evidence: str = "The safer fix validates and sanitizes input.",
+    is_vulnerable: bool = True,
+    item_kind: str = "vulnerable",
 ) -> Path:
     sample_root = root / cve_id / sample_id
     sample_root.mkdir(parents=True)
     metadata = {
         "affected_files": ["src/example.file"],
         "cve_id": cve_id,
+        "files": {item_kind: vulnerable_name},
+        "is_vulnerable": is_vulnerable,
+        "item_kind": item_kind,
         "language": _language(vulnerable_name),
         "provenance": {"extraction_notes": extraction_notes},
         "sample_id": sample_id,
+        "sample_kind": "positive" if is_vulnerable else "negative",
         "status": status,
     }
     (sample_root / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     (sample_root / "evidence.md").write_text(evidence, encoding="utf-8")
     (sample_root / vulnerable_name).write_text(vulnerable_code, encoding="utf-8")
-    (sample_root / vulnerable_name.replace("vulnerable", "fixed")).write_text(
-        "safe();\n",
-        encoding="utf-8",
-    )
+    if vulnerable_name.startswith("vulnerable."):
+        (sample_root / vulnerable_name.replace("vulnerable", "fixed")).write_text(
+            "safe();\n",
+            encoding="utf-8",
+        )
     return sample_root
 
 
 def _language(filename: str) -> str:
     return {
+        ".c": "c",
+        ".cpp": "cpp",
         ".js": "javascript",
         ".py": "python",
         ".java": "java",
         ".php": "php",
+        ".rb": "ruby",
     }[Path(filename).suffix]

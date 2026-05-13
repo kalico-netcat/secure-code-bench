@@ -121,11 +121,16 @@ To compare prompt priors, generate two suites over the same samples:
 secure-code-bench kev-suite \
   --samples-root /path/to/kev-code-samples/samples \
   --output examples/kev.yml \
-  --prompt-assumption both
+  --prompt-assumption both \
+  --limit 5 \
+  --seed 42
 ```
 
 This writes `examples/kev-may-be-safe.yml` and
 `examples/kev-known-vulnerable.yml`.
+Suite generation shuffles discovered samples before applying `--limit` by
+default; pass `--seed` to make the random subset reproducible across both prompt
+variants. Use `--ordered` to disable shuffling.
 
 `may-be-safe` tells models that there may be no vulnerability and asks them to say
 `None` when no concrete issue is present. `known-vulnerable` tells models all
@@ -137,7 +142,8 @@ runner can load local files, but those paths are replaced with code before calli
 When pointed at an anonymized sample export, suite generation uses the
 `vulnerable.*` file from each accepted sample directory as the model-facing input.
 That file may be labeled vulnerable or no-finding by metadata. `fixed.*` files are
-treated as reference solutions, not model-facing benchmark cases.
+treated as reference solutions, not model-facing benchmark cases. Empty
+`vulnerable.*` files are skipped.
 
 Run the generated suite like any other benchmark:
 

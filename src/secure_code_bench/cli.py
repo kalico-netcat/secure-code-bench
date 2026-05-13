@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -93,8 +94,21 @@ def kev_suite(
         "--prompt-assumption",
         help="Prompt prior to give models, or 'both' to write paired suites.",
     ),
+    randomize: bool = typer.Option(
+        True,
+        "--randomize/--ordered",
+        help="Shuffle discovered samples before applying --limit, or use --ordered for filesystem order.",
+    ),
+    seed: Optional[int] = typer.Option(
+        None,
+        "--seed",
+        help="Optional random seed for reproducible --randomize selection.",
+    ),
 ) -> None:
     if prompt_assumption == "both":
+        effective_seed = seed
+        if randomize and effective_seed is None:
+            effective_seed = random.SystemRandom().randrange(0, 2**32)
         for assumption in ("may-be-safe", "known-vulnerable"):
             output_path, suite = write_kev_suite(
                 samples_root=samples_root,
@@ -103,6 +117,8 @@ def kev_suite(
                 limit=limit,
                 anonymize=anonymize,
                 prompt_assumption=assumption,
+                randomize=randomize,
+                seed=effective_seed,
             )
             typer.echo(f"Wrote {len(suite.cases)} KEV benchmark case(s) to {output_path}")
         return
@@ -114,6 +130,8 @@ def kev_suite(
         limit=limit,
         anonymize=anonymize,
         prompt_assumption=prompt_assumption,
+        randomize=randomize,
+        seed=seed,
     )
     typer.echo(f"Wrote {len(suite.cases)} KEV benchmark case(s) to {output_path}")
 

@@ -93,6 +93,50 @@ def test_build_kev_suite_uses_vulnerable_slot_but_label_may_be_safe(tmp_path: Pa
     assert "not vulnerab" in suite.cases[1].scorers[0].pattern
 
 
+def test_build_kev_suite_skips_empty_vulnerable_files(tmp_path: Path) -> None:
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0001",
+        sample_id="empty-item",
+        status="accepted",
+        vulnerable_name="vulnerable.java",
+        vulnerable_code="\n",
+    )
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0002",
+        sample_id="nonempty-item",
+        status="accepted",
+        vulnerable_name="vulnerable.java",
+        vulnerable_code="dangerous();\n",
+    )
+
+    suite = build_kev_suite(tmp_path)
+
+    assert len(suite.cases) == 1
+    assert "nonempty-item" in str(suite.cases[0].code_files[0])
+
+
+def test_build_kev_suite_can_randomize_limited_selection_with_seed(tmp_path: Path) -> None:
+    for index in range(10):
+        _sample(
+            tmp_path,
+            cve_id=f"CVE-2020-{index:04d}",
+            sample_id=f"sample-{index}",
+            status="accepted",
+            vulnerable_name="vulnerable.py",
+            vulnerable_code=f"dangerous_{index}();\n",
+        )
+
+    first = build_kev_suite(tmp_path, limit=3, randomize=True, seed=7)
+    second = build_kev_suite(tmp_path, limit=3, randomize=True, seed=7)
+    ordered = build_kev_suite(tmp_path, limit=3)
+
+    first_paths = [case.code_files[0] for case in first.cases]
+    assert first_paths == [case.code_files[0] for case in second.cases]
+    assert first_paths != [case.code_files[0] for case in ordered.cases]
+
+
 def test_kev_prompt_assumption_controls_model_facing_prior(tmp_path: Path) -> None:
     _sample(
         tmp_path,
@@ -255,6 +299,84 @@ def test_kev_suite_cli_can_write_both_prompt_assumptions(tmp_path: Path) -> None
     known_vulnerable_data = yaml.safe_load(known_vulnerable.read_text(encoding="utf-8"))
     assert "It is possible there is no vulnerability" in may_be_safe_data["cases"][0]["prompt"]
     assert "known to contain a security vulnerability" in known_vulnerable_data["cases"][0]["prompt"]
+
+
+def test_kev_suite_cli_both_uses_same_random_subset(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from secure_code_bench.cli import app
+
+    for index in range(6):
+        _sample(
+            tmp_path,
+            cve_id=f"CVE-2025-{index:04d}",
+            sample_id=f"sample-{index}",
+            status="accepted",
+            vulnerable_name="vulnerable.php",
+            vulnerable_code=f"dangerous_{index}();\n",
+        )
+    output = tmp_path / "kev.yml"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "kev-suite",
+            "--samples-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--prompt-assumption",
+            "both",
+            "--limit",
+            "3",
+        ],
+    )
+
+    may_be_safe_data = yaml.safe_load((tmp_path / "kev-may-be-safe.yml").read_text(encoding="utf-8"))
+    known_vulnerable_data = yaml.safe_load((tmp_path / "kev-known-vulnerable.yml").read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert len(may_be_safe_data["cases"]) == 3
+    assert [case["code_files"] for case in may_be_safe_data["cases"]] == [
+        case["code_files"] for case in known_vulnerable_data["cases"]
+    ]
+
+
+def test_kev_suite_cli_can_use_ordered_selection(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from secure_code_bench.cli import app
+
+    for index in range(4):
+        _sample(
+            tmp_path,
+            cve_id=f"CVE-2025-{index:04d}",
+            sample_id=f"sample-{index}",
+            status="accepted",
+            vulnerable_name="vulnerable.php",
+            vulnerable_code=f"dangerous_{index}();\n",
+        )
+    output = tmp_path / "kev.yml"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "kev-suite",
+            "--samples-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--limit",
+            "2",
+            "--ordered",
+        ],
+    )
+
+    data = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert [case["code_files"][0] for case in data["cases"]] == [
+        str(tmp_path / "CVE-2025-0000" / "sample-0" / "vulnerable.php"),
+        str(tmp_path / "CVE-2025-0001" / "sample-1" / "vulnerable.php"),
+    ]
 
 
 def _sample(

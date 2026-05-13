@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,6 +72,8 @@ def discover_kev_samples(
     samples_root: Path,
     status: str = "accepted",
     limit: Optional[int] = None,
+    randomize: bool = False,
+    seed: Optional[int] = None,
 ) -> list[KevSample]:
     root = samples_root.expanduser().resolve()
     if not root.exists():
@@ -103,8 +106,13 @@ def discover_kev_samples(
                 review_text=review_text,
             )
         )
-        if limit is not None and len(samples) >= limit:
-            break
+
+    if randomize:
+        rng = random.Random(seed)
+        rng.shuffle(samples)
+
+    if limit is not None:
+        samples = samples[:limit]
 
     return samples
 
@@ -115,8 +123,16 @@ def build_kev_suite(
     limit: Optional[int] = None,
     anonymize: bool = True,
     prompt_assumption: PromptAssumption = "may-be-safe",
+    randomize: bool = False,
+    seed: Optional[int] = None,
 ) -> BenchmarkSuite:
-    samples = discover_kev_samples(samples_root=samples_root, status=status, limit=limit)
+    samples = discover_kev_samples(
+        samples_root=samples_root,
+        status=status,
+        limit=limit,
+        randomize=randomize,
+        seed=seed,
+    )
     cases = [
         _case_from_sample(
             sample,
@@ -136,6 +152,8 @@ def write_kev_suite(
     limit: Optional[int] = None,
     anonymize: bool = True,
     prompt_assumption: PromptAssumption = "may-be-safe",
+    randomize: bool = False,
+    seed: Optional[int] = None,
 ) -> tuple[Path, BenchmarkSuite]:
     suite = build_kev_suite(
         samples_root=samples_root,
@@ -143,6 +161,8 @@ def write_kev_suite(
         limit=limit,
         anonymize=anonymize,
         prompt_assumption=prompt_assumption,
+        randomize=randomize,
+        seed=seed,
     )
     output_path = output.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -348,13 +368,23 @@ def _sample_code_file(sample_root: Path, metadata: dict[str, Any]) -> Optional[P
         filename = files.get("vulnerable")
         if isinstance(filename, str):
             path = sample_root / filename
-            if path.exists():
+            if _has_code_content(path):
                 return path
 
     matches = sorted(sample_root.glob("vulnerable.*"))
-    if matches:
-        return matches[0]
+    for path in matches:
+        if _has_code_content(path):
+            return path
     return None
+
+
+def _has_code_content(path: Path) -> bool:
+    if not path.exists() or not path.is_file():
+        return False
+    try:
+        return bool(path.read_text(encoding="utf-8").strip())
+    except UnicodeDecodeError:
+        return path.stat().st_size > 0
 
 
 def _case_id(sample: KevSample, index: int, anonymize: bool) -> str:

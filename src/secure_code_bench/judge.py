@@ -69,6 +69,7 @@ For no-vulnerability rubrics:
 - Impact means correctly saying there is no demonstrated security impact.
 - Code evidence means citing concrete code properties that support the safe/no-finding answer.
 - Fix direction means saying no security fix is required, or naming only optional hardening.
+- Do not penalize for missing vulnerability_type/code_evidence dimensions when it correctly identifies no vulnerability.
 
 Return strict JSON only with this schema:
 {{"vulnerability_type": 0|0.5|1, "impact": 0|0.5|1, "code_evidence": 0|0.5|1, "fix_direction": 0|0.5|1, "overall": 0.0 to 1.0, "reason": "short explanation"}}

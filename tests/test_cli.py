@@ -70,4 +70,6 @@ def test_cli_run_help_shows_defaults() -> None:
     assert "--continue-on-error" not in result.output
     assert "--judge" in result.output
     assert "openai/gpt-mini-latest" in result.output
-    assert "--prompt-assumption" in CliRunner().invoke(cli.app, ["kev-suite", "--help"]).output
+    kev_help = CliRunner().invoke(cli.app, ["kev-suite", "--help"], env={"COLUMNS": "200"}).output
+    assert "--prompt-assumption" in kev_help
+    assert "--ordered" in kev_help

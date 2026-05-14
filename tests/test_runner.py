@@ -47,7 +47,7 @@ class PartialJudgeProvider:
         if model == "judge-model":
             return ModelResponse(
                 text=(
-                    '{"vulnerability_type":1,"impact":1,"code_evidence":0,'
+                    '{"vulnerability_type":1,"impact":1,"code_evidence":0.5,'
                     '"fix_direction":1,"overall":0.9,"reason":"misses evidence"}'
                 )
             )
@@ -215,6 +215,114 @@ def test_run_suite_requires_judge_dimensions_even_with_high_overall(tmp_path: Pa
     assert results[0].acceptance.overall == 0.9
     assert results[0].acceptance.required_dimensions_met is False
     assert "code_evidence" in results[0].acceptance.reason
+
+
+def test_run_suite_balanced_judge_accepts_partial_code_evidence(tmp_path: Path) -> None:
+    suite = _one_case_suite(tmp_path)
+    suite.cases[0].rubric = JudgeRubric(
+        vulnerability_type="command injection",
+        impact="attacker can execute commands",
+        code_evidence="user input reaches command execution",
+        fix_direction="sanitize input and avoid shell execution",
+    )
+    suite.cases[0].acceptance = AcceptanceConfig(
+        judge_policy="balanced_judge",
+        required_dimensions=["vulnerability_type", "code_evidence"],
+        core_dimensions=["vulnerability_type"],
+        allow_partial_credit_dimensions=["code_evidence"],
+        min_core_dimension_score=0.5,
+    )
+
+    results = run_suite(
+        suite,
+        ["tested-model"],
+        PartialJudgeProvider(),
+        options=RunOptions(judge=True, judge_model="judge-model"),
+    )
+
+    assert results[0].passed is True
+    assert results[0].acceptance is not None
+    assert results[0].acceptance.required_dimensions_met is True
+
+
+class PartialTypeJudgeProvider:
+    def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        if model == "judge-model":
+            return ModelResponse(
+                text=(
+                    '{"vulnerability_type":0.5,"impact":1,"code_evidence":1,'
+                    '"fix_direction":1,"overall":0.88,"reason":"related class with strong evidence"}'
+                )
+            )
+        return ModelResponse(text="The issue can be described as RCE via shell injection.")
+
+
+class WrongTypeJudgeProvider:
+    def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        if model == "judge-model":
+            return ModelResponse(
+                text=(
+                    '{"vulnerability_type":0,"impact":1,"code_evidence":1,'
+                    '"fix_direction":1,"overall":0.85,"reason":"wrong vulnerability class"}'
+                )
+            )
+        return ModelResponse(text="This is some other issue.")
+
+
+def test_run_suite_balanced_judge_accepts_related_vulnerability_class(tmp_path: Path) -> None:
+    suite = _one_case_suite(tmp_path)
+    suite.cases[0].rubric = JudgeRubric(
+        vulnerability_type="remote code execution",
+        impact="attacker can execute code",
+        code_evidence="attacker-controlled input reaches shell execution",
+        fix_direction="disable dangerous parsing or shell execution",
+    )
+    suite.cases[0].acceptance = AcceptanceConfig(
+        judge_policy="balanced_judge",
+        required_dimensions=["vulnerability_type", "code_evidence"],
+        core_dimensions=["vulnerability_type"],
+        allow_partial_credit_dimensions=["code_evidence"],
+        min_core_dimension_score=0.5,
+    )
+
+    results = run_suite(
+        suite,
+        ["tested-model"],
+        PartialTypeJudgeProvider(),
+        options=RunOptions(judge=True, judge_model="judge-model"),
+    )
+
+    assert results[0].passed is True
+    assert results[0].acceptance is not None
+    assert results[0].acceptance.required_dimensions_met is True
+
+
+def test_run_suite_balanced_judge_still_rejects_wrong_vulnerability_class(tmp_path: Path) -> None:
+    suite = _one_case_suite(tmp_path)
+    suite.cases[0].rubric = JudgeRubric(
+        vulnerability_type="remote code execution",
+        impact="attacker can execute code",
+        code_evidence="attacker-controlled input reaches shell execution",
+        fix_direction="disable dangerous parsing or shell execution",
+    )
+    suite.cases[0].acceptance = AcceptanceConfig(
+        judge_policy="balanced_judge",
+        required_dimensions=["vulnerability_type", "code_evidence"],
+        core_dimensions=["vulnerability_type"],
+        allow_partial_credit_dimensions=["code_evidence"],
+        min_core_dimension_score=0.5,
+    )
+
+    results = run_suite(
+        suite,
+        ["tested-model"],
+        WrongTypeJudgeProvider(),
+        options=RunOptions(judge=True, judge_model="judge-model"),
+    )
+
+    assert results[0].passed is False
+    assert results[0].acceptance is not None
+    assert "vulnerability_type" in results[0].acceptance.reason
 
 
 def _one_case_suite(tmp_path: Path):

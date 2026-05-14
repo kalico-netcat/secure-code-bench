@@ -50,9 +50,14 @@ def test_build_kev_suite_generates_valid_cases_and_scorers(tmp_path: Path) -> No
     assert suite.cases[0].code_files[0].is_absolute()
     assert any(scorer.type == "regex" for scorer in suite.cases[0].scorers)
     assert suite.cases[0].acceptance is not None
+    assert suite.cases[0].acceptance.judge_policy == "balanced_judge"
     assert suite.cases[0].acceptance.required_dimensions == ["vulnerability_type", "code_evidence"]
+    assert suite.cases[0].acceptance.core_dimensions == ["vulnerability_type"]
+    assert suite.cases[0].acceptance.allow_partial_credit_dimensions == ["code_evidence"]
+    assert suite.cases[0].acceptance.min_core_dimension_score == 0.5
     assert suite.cases[0].rubric is not None
     assert suite.cases[0].rubric.vulnerability_type == "cross-site scripting"
+    assert "script injection" in (suite.cases[0].rubric.notes or "")
 
 
 def test_build_kev_suite_uses_vulnerable_slot_but_label_may_be_safe(tmp_path: Path) -> None:
@@ -259,6 +264,7 @@ def test_kev_suite_cli_writes_yaml(monkeypatch, tmp_path: Path) -> None:
     assert data["cases"][0]["id"] == "kev-sample-0001"
     assert "known to contain a security vulnerability" in data["cases"][0]["prompt"]
     assert data["cases"][0]["acceptance"]["required_dimensions"] == ["vulnerability_type", "code_evidence"]
+    assert data["cases"][0]["acceptance"]["judge_policy"] == "balanced_judge"
     assert "rubric" in data["cases"][0]
 
 

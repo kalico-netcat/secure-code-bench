@@ -18,8 +18,12 @@ class ScorerConfig(BaseModel):
 class AcceptanceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    judge_policy: Literal["strict_dimensions", "balanced_judge"] = "strict_dimensions"
     min_overall: float = 0.75
     required_dimensions: list[str] = Field(default_factory=lambda: ["vulnerability_type", "code_evidence"])
+    core_dimensions: list[str] = Field(default_factory=list)
+    allow_partial_credit_dimensions: list[str] = Field(default_factory=list)
+    min_core_dimension_score: float = 1.0
     min_dimension_score: float = 1.0
 
 

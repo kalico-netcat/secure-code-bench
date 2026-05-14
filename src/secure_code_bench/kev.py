@@ -67,6 +67,13 @@ REMEDIATION_PATTERNS = {
     "disable dangerous parsing": r"disable|avoid|remove|safe parser|identity function",
 }
 
+RELATED_VULNERABILITY_GUIDANCE = {
+    "command injection": "Related labels such as shell injection or remote code execution are acceptable when they describe the same attacker-controlled command path.",
+    "remote code execution": "Related labels such as command injection are acceptable when the answer correctly explains the execution path and compromise impact.",
+    "deserialization": "Related labels such as unsafe object construction or code execution are acceptable when they describe the same dangerous deserialization path.",
+    "cross-site scripting": "Related labels such as script injection are acceptable when they describe the same attacker-controlled HTML or script execution path.",
+}
+
 
 def discover_kev_samples(
     samples_root: Path,
@@ -193,7 +200,7 @@ def _case_from_sample(
         prompt=prompt,
         code_files=[sample.vulnerable_path],
         scorers=_scorers_for(sample),
-        acceptance=AcceptanceConfig(),
+        acceptance=_acceptance_for(sample),
         rubric=_rubric_for(sample),
     )
 
@@ -208,8 +215,9 @@ def _prompt_for_sample(
     if prompt_assumption == "known-vulnerable":
         instruction = (
             f"Review the {sample_description} below. This sample is known to contain a "
-            "security vulnerability. Identify the vulnerability, explain the impact, "
-            "cite the code evidence, and describe the safer fix direction."
+            "security vulnerability. "
+            "Identify the vulnerability, explain the impact, cite the code evidence, and "
+            "describe the safer fix direction."
         )
     else:
         instruction = (
@@ -285,12 +293,25 @@ def _rubric_for(sample: KevSample) -> JudgeRubric:
         str((sample.metadata.get("provenance") or {}).get("extraction_notes", ""))
     )
     evidence = why or extraction_notes or "Answer should cite the vulnerable operation in the code."
+    note_parts = [part for part in (notes, RELATED_VULNERABILITY_GUIDANCE.get(vulnerability_type)) if part]
     return JudgeRubric(
         vulnerability_type=vulnerability_type,
         impact=_impact_for(vulnerability_type),
         code_evidence=evidence,
         fix_direction=_fix_direction_for(sample, fallback=extraction_notes or why),
-        notes=notes or None,
+        notes=" ".join(note_parts) or None,
+    )
+
+
+def _acceptance_for(sample: KevSample) -> AcceptanceConfig:
+    return AcceptanceConfig(
+        judge_policy="balanced_judge",
+        required_dimensions=["vulnerability_type", "code_evidence"],
+        core_dimensions=["vulnerability_type"],
+        allow_partial_credit_dimensions=["code_evidence"],
+        min_overall=0.75,
+        min_core_dimension_score=0.5,
+        min_dimension_score=1.0,
     )
 
 

@@ -49,3 +49,24 @@ def test_judge_prompt_allows_no_vulnerability_rubrics() -> None:
     assert "penalize invented" in prompt
     assert "vulnerabilities in that case" in prompt
     assert "For no-vulnerability rubrics" in prompt
+    assert "Do not over-penalize partial wording" in prompt
+
+
+def test_judge_prompt_allows_related_vulnerability_classes() -> None:
+    case = BenchmarkCase(
+        id="vuln-case",
+        prompt="Review this code.",
+        rubric=JudgeRubric(
+            vulnerability_type="remote code execution",
+            impact="attacker input can lead to code execution",
+            code_evidence="user input reaches shell execution",
+            fix_direction="disable dangerous parsing",
+            notes="Related labels such as command injection are acceptable.",
+        ),
+    )
+
+    prompt = _build_judge_prompt(case, "This is command injection that leads to code execution.")
+
+    assert "Accept semantically related vulnerability classes" in prompt
+    assert "less exact label" in prompt
+    assert "Award full code_evidence credit" in prompt

@@ -59,6 +59,13 @@ CVE or vulnerability name without explaining the code evidence. The correct answ
 be that no concrete vulnerability is present if the rubric says so; penalize invented
 vulnerabilities in that case.
 
+Accept semantically related vulnerability classes when they describe the same exploit
+path or a direct parent/child framing as the rubric, such as command injection leading
+to remote code execution. Distinguish between a wrong answer and a materially correct
+answer that uses a less exact label. Award full code_evidence credit when the answer
+cites the concrete code path or dangerous operation, even if it uses different but
+relevant wording than the rubric.
+
 Score each dimension as 0, 0.5, or 1:
 - 0 means absent or wrong.
 - 0.5 means directionally right but incomplete or vague.
@@ -69,7 +76,7 @@ For no-vulnerability rubrics:
 - Impact means correctly saying there is no demonstrated security impact.
 - Code evidence means citing concrete code properties that support the safe/no-finding answer.
 - Fix direction means saying no security fix is required, or naming only optional hardening.
-- Do not penalize for missing vulnerability_type/code_evidence dimensions when it correctly identifies no vulnerability.
+- Do not over-penalize partial wording when the answer correctly identifies no vulnerability and supports it with concrete code reasoning.
 
 Return strict JSON only with this schema:
 {{"vulnerability_type": 0|0.5|1, "impact": 0|0.5|1, "code_evidence": 0|0.5|1, "fix_direction": 0|0.5|1, "overall": 0.0 to 1.0, "reason": "short explanation"}}

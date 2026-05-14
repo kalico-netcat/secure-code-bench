@@ -44,12 +44,20 @@ def accept_judge(score: ScoreResult, config: AcceptanceConfig | None = None) -> 
     missing = [
         dimension
         for dimension in policy.required_dimensions
-        if _float_or_default(dimensions.get(dimension), 0.0) < policy.min_dimension_score
+        if _float_or_default(dimensions.get(dimension), 0.0) < _required_threshold(policy, dimension)
+    ]
+    missing_core = [
+        dimension
+        for dimension in policy.core_dimensions
+        if _float_or_default(dimensions.get(dimension), 0.0) < policy.min_core_dimension_score
     ]
     required_dimensions_met = not missing
-    passed = overall >= policy.min_overall and required_dimensions_met
+    core_dimensions_met = not missing_core
+    passed = overall >= policy.min_overall and required_dimensions_met and core_dimensions_met
     if passed:
         reason = str(score.details.get("reason") or "Judge acceptance policy passed.")
+    elif missing_core:
+        reason = "Missing core dimension(s): " + ", ".join(missing_core)
     elif missing:
         reason = "Missing required dimension(s): " + ", ".join(missing)
     else:
@@ -69,3 +77,11 @@ def _float_or_default(value: object, default: float) -> float:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return default
+
+
+def _required_threshold(policy: AcceptanceConfig, dimension: str) -> float:
+    if dimension in policy.core_dimensions:
+        return policy.min_core_dimension_score
+    if policy.judge_policy == "balanced_judge" and dimension in policy.allow_partial_credit_dimensions:
+        return min(policy.min_dimension_score, 0.5)
+    return policy.min_dimension_score

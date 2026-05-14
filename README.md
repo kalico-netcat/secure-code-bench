@@ -22,7 +22,7 @@ Then edit `.env`:
 OPENROUTER_API_KEY=your-key-here
 ```
 
-Run the example suite:
+Run the small checked-in example suite:
 
 ```bash
 secure-code-bench run examples/basic.yml --model openai/gpt-4.1-mini
@@ -30,8 +30,9 @@ secure-code-bench run examples/basic.yml --model openai/gpt-4.1-mini
 
 Results are written as JSONL, with one record per case/model pair.
 
-For slower models, you can still override the request timeout, but the default is already
-600 seconds per model request:
+After generating a local KEV suite under `examples/` as described below, you can still
+override the request timeout for slower models. The default is already 600 seconds per
+model request:
 
 ```bash
 secure-code-bench run examples/kev.yml \
@@ -41,9 +42,9 @@ secure-code-bench run examples/kev.yml \
   --timeout 900
 ```
 
-For stronger scoring, enable rubric judging. The tested model sees only the anonymized code
-review prompt; the judge sees the model answer plus a hidden rubric generated from local
-sample review metadata:
+For stronger KEV scoring, enable rubric judging. The tested model sees only the anonymized
+code review prompt; the judge sees the model answer plus a hidden rubric generated from
+local sample review metadata:
 
 ```bash
 secure-code-bench run examples/kev.yml \
@@ -54,6 +55,23 @@ secure-code-bench run examples/kev.yml \
 ```
 
 The default judge is `openai/gpt-mini-latest`. Override it with `--judge-model` when needed.
+
+To run multiple suites in a single command, list each suite and pair each with an `--output`
+(paired by order). This is useful for running the KEV may-be-safe and known-vulnerable
+prompts together:
+
+```bash
+secure-code-bench run \
+  examples/kev-may-be-safe.yml \
+  examples/kev-known-vulnerable.yml \
+  --output results/kev-may-be-safe.jsonl \
+  --output results/kev-known-vulnerable.jsonl \
+  --model anthropic/claude-opus-4.7 \
+  --model openai/gpt-5.5 \
+  --judge
+```
+
+If `--output` is omitted, each suite writes to `results/<suite-stem>.jsonl`.
 
 For OpenRouter `latest` aliases, omit the leading `~`; the runner adds it when sending
 requests:
@@ -91,10 +109,14 @@ enabled, final pass/fail comes from this policy instead of deterministic scorers
 
 ```yaml
 acceptance:
+  judge_policy: strict_dimensions
   min_overall: 0.75
   required_dimensions:
     - vulnerability_type
     - code_evidence
+  core_dimensions: []
+  allow_partial_credit_dimensions: []
+  min_core_dimension_score: 1.0
   min_dimension_score: 1.0
 ```
 
@@ -154,8 +176,9 @@ secure-code-bench run examples/kev.yml --model openai/gpt-4.1-mini
 The generated prompts show only the `vulnerable.*` file contents. `metadata.json` and
 `evidence.md` are used only to build broad deterministic regex scorers.
 
-`examples/kev.yml` is a template showing the generated structure. Regenerate it with your
-local samples path before running it.
+Generated suites under `examples/` are intentionally ignored by git, except for the small
+checked-in `examples/basic.yml` smoke-test fixture. Regenerate KEV suites from your local
+samples path before running them.
 
 ## Environment
 

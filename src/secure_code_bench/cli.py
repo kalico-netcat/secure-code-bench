@@ -24,18 +24,27 @@ def main() -> None:
 
 @app.command()
 def run(
-    suite: Path = typer.Argument(..., help="Path to a benchmark suite YAML file."),
+    suites: list[Path] = typer.Argument(
+        ...,
+        help=(
+            "Path to one or more benchmark suite YAML files. Pair each with an --output "
+            "to write its results to a separate file."
+        ),
+    ),
     model: list[str] = typer.Option(
         ...,
         "--model",
         "-m",
         help="Model ID to run. Pass multiple times to compare models.",
     ),
-    output: Path = typer.Option(
-        Path("results/benchmark-results.jsonl"),
+    outputs: list[Path] = typer.Option(
+        [],
         "--output",
         "-o",
-        help="Where to write JSONL run records.",
+        help=(
+            "Where to write JSONL run records. Pass once per suite (paired by order). "
+            "If omitted, defaults to results/<suite-stem>.jsonl for each suite."
+        ),
     ),
     temperature: float = typer.Option(0.0, help="Sampling temperature for model calls."),
     max_tokens: Optional[int] = typer.Option(None, help="Optional response token limit."),
@@ -48,25 +57,36 @@ def run(
         help="Model to use when --judge is enabled.",
     ),
 ) -> None:
+    if outputs and len(outputs) != len(suites):
+        raise typer.BadParameter(
+            f"--output count ({len(outputs)}) must match suite count ({len(suites)}), "
+            "or be omitted to use defaults."
+        )
+    if not outputs:
+        outputs = [Path("results") / f"{suite.stem}.jsonl" for suite in suites]
+
     load_dotenv()
-    benchmark_suite = load_suite(suite)
     provider = OpenRouterProvider(timeout=timeout)
-    results = run_suite(
-        benchmark_suite,
-        models=model,
-        provider=provider,
-        options=RunOptions(
-            temperature=temperature,
-            max_tokens=max_tokens,
-            retries=retries,
-            limit=limit,
-            judge=judge,
-            judge_model=judge_model,
-        ),
-        progress=_progress_callback(benchmark_suite, limit=limit),
+    run_options = RunOptions(
+        temperature=temperature,
+        max_tokens=max_tokens,
+        retries=retries,
+        limit=limit,
+        judge=judge,
+        judge_model=judge_model,
     )
-    output_path = write_jsonl(output, results)
-    _print_summary(results, output_path)
+
+    for suite_path, output in zip(suites, outputs):
+        benchmark_suite = load_suite(suite_path)
+        results = run_suite(
+            benchmark_suite,
+            models=model,
+            provider=provider,
+            options=run_options,
+            progress=_progress_callback(benchmark_suite, limit=limit),
+        )
+        output_path = write_jsonl(output, results)
+        _print_summary(results, output_path)
 
 
 @app.command("kev-suite")

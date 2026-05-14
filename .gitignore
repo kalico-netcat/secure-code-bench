@@ -4,5 +4,10 @@
 __pycache__/
 *.py[cod]
 results/
+examples/*
+!examples/basic.yml
+!examples/samples/
+examples/samples/*
+!examples/samples/sql_injection.py
 outline.md
 progress.md

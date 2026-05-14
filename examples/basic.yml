@@ -1,0 +1,14 @@
+name: basic secure code checks
+cases:
+  - id: sql-injection
+    prompt: |
+      Review this code and identify the main vulnerability:
+
+      {file:samples/sql_injection.py}
+    code_files:
+      - samples/sql_injection.py
+    scorers:
+      - type: contains
+        value: SQL injection
+      - type: regex
+        pattern: "(?i)parameteri[sz]ed|prepared statement"

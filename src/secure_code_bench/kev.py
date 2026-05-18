@@ -195,13 +195,15 @@ def _case_from_sample(
         f"{prompt}\n\n"
         f"{{file:{file_placeholder}}}"
     )
+    rubric = _rubric_for(sample)
     return BenchmarkCase(
         id=_case_id(sample, index=index, anonymize=anonymize),
         prompt=prompt,
         code_files=[sample.vulnerable_path],
         scorers=_scorers_for(sample),
         acceptance=_acceptance_for(sample),
-        rubric=_rubric_for(sample),
+        rubric=rubric,
+        metadata=_case_metadata_for(sample),
     )
 
 
@@ -275,28 +277,47 @@ def _scorers_for(sample: KevSample) -> list[ScorerConfig]:
 
 
 def _rubric_for(sample: KevSample) -> JudgeRubric:
+    expected_response = _expected_response_for(sample)
     if not sample.is_vulnerable:
         notes = _sanitize_rubric_text(_review_section(sample.review_text, "Reviewer Notes"))
         return JudgeRubric(
             vulnerability_type="no concrete vulnerability",
             impact="no demonstrated security impact",
-            code_evidence="Answer should cite code evidence supporting the no-finding conclusion.",
+            code_evidence=(
+                str(expected_response.get("code_evidence", "")).strip()
+                or "Answer should cite code evidence supporting the no-finding conclusion."
+            ),
             fix_direction="no security fix is required; optional hardening is acceptable if clearly labeled optional",
-            notes=notes or f"This is a non-vulnerable {sample.item_kind} control sample.",
+            notes=" ".join(
+                part
+                for part in (
+                    notes,
+                    str(expected_response.get("expected_behavior", "")).strip(),
+                    f"This is a non-vulnerable {sample.item_kind} control sample.",
+                )
+                if part
+            ),
         )
 
     text = _metadata_text(sample)
-    vulnerability_type = _vulnerability_label(text)
+    expected_vulnerability_type = str(expected_response.get("vulnerability_type", "")).strip()
+    expected_behavior = str(expected_response.get("expected_behavior", "")).strip()
+    expected_code_evidence = str(expected_response.get("code_evidence", "")).strip()
+    vulnerability_type = expected_vulnerability_type or _vulnerability_label(text)
     notes = _sanitize_rubric_text(_review_section(sample.review_text, "Reviewer Notes"))
     why = _sanitize_rubric_text(_review_section(sample.review_text, "Why This Snippet"))
     extraction_notes = _sanitize_rubric_text(
         str((sample.metadata.get("provenance") or {}).get("extraction_notes", ""))
     )
-    evidence = why or extraction_notes or "Answer should cite the vulnerable operation in the code."
+    evidence = expected_code_evidence or why or extraction_notes or "Answer should cite the vulnerable operation in the code."
     note_parts = [part for part in (notes, RELATED_VULNERABILITY_GUIDANCE.get(vulnerability_type)) if part]
+    if expected_behavior:
+        note_parts.append(f"Expected behavior: {expected_behavior}")
+    if _rubric_quality_for(sample) == "weak":
+        note_parts.append("Rubric quality: weak; no concrete review evidence was available.")
     return JudgeRubric(
         vulnerability_type=vulnerability_type,
-        impact=_impact_for(vulnerability_type),
+        impact=expected_behavior or _impact_for(vulnerability_type),
         code_evidence=evidence,
         fix_direction=_fix_direction_for(sample, fallback=extraction_notes or why),
         notes=" ".join(note_parts) or None,
@@ -313,6 +334,65 @@ def _acceptance_for(sample: KevSample) -> AcceptanceConfig:
         min_core_dimension_score=0.5,
         min_dimension_score=1.0,
     )
+
+
+def _case_metadata_for(sample: KevSample) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    expected_response = _expected_response_for(sample)
+    if expected_response:
+        metadata["expected_response"] = expected_response
+    if sample.is_vulnerable:
+        metadata["rubric_quality"] = _rubric_quality_for(sample)
+    return metadata
+
+
+def _expected_response_for(sample: KevSample) -> dict[str, Any]:
+    expected_responses = sample.metadata.get("expected_responses")
+    if not isinstance(expected_responses, dict):
+        return {}
+
+    filename = sample.vulnerable_path.name
+    for key in ("vulnerable", sample.item_kind):
+        expected = expected_responses.get(key)
+        if isinstance(expected, dict) and expected.get("file") == filename:
+            return _sanitize_expected_response(expected)
+
+    for expected in expected_responses.values():
+        if isinstance(expected, dict) and expected.get("file") == filename:
+            return _sanitize_expected_response(expected)
+
+    expected = expected_responses.get("vulnerable")
+    if isinstance(expected, dict):
+        return _sanitize_expected_response(expected)
+    return {}
+
+
+def _sanitize_expected_response(expected: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = ["label", "is_vulnerable", "vulnerability_type", "expected_behavior", "code_evidence"]
+    sanitized: dict[str, Any] = {}
+    for key in allowed_keys:
+        value = expected.get(key)
+        if isinstance(value, str):
+            sanitized[key] = _sanitize_rubric_text(value)
+        elif isinstance(value, bool):
+            sanitized[key] = value
+    return sanitized
+
+
+def _rubric_quality_for(sample: KevSample) -> str:
+    if not sample.is_vulnerable:
+        return "control"
+    expected_response = _expected_response_for(sample)
+    if str(expected_response.get("code_evidence", "")).strip():
+        return "strong"
+    why = _sanitize_rubric_text(_review_section(sample.review_text, "Why This Snippet"))
+    extraction_notes = _sanitize_rubric_text(
+        str((sample.metadata.get("provenance") or {}).get("extraction_notes", ""))
+    )
+    evidence_text = _sanitize_rubric_text(sample.evidence_text)
+    if why or extraction_notes or evidence_text:
+        return "strong"
+    return "weak"
 
 
 def _vulnerability_label(text: str) -> str:
@@ -366,6 +446,7 @@ def _suite_to_yaml(suite: BenchmarkSuite) -> str:
                 ],
                 **({"acceptance": case.acceptance.model_dump()} if case.acceptance is not None else {}),
                 **({"rubric": case.rubric.model_dump()} if case.rubric is not None else {}),
+                **({"metadata": case.metadata} if case.metadata else {}),
             }
             for case in suite.cases
         ],

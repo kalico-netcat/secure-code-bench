@@ -127,6 +127,14 @@ decision. Rubrics can also represent safe/control cases by setting the expected
 finding to no concrete vulnerability; the judge is instructed to penalize invented
 vulnerabilities for those cases.
 
+The runner normalizes judge dimensions and computes `overall` locally from those
+dimensions. If the judge returns an `overall` value, it is retained as
+`overall_raw` for auditability but does not control pass/fail. Judge results also
+apply deterministic polarity guardrails: an answer that says there is no finding
+cannot pass a vulnerable rubric, and an answer that invents a vulnerability cannot
+pass a no-vulnerability rubric. Guardrail overrides are recorded in
+`scores[].details.guardrails`.
+
 ## KEV code samples
 
 Generate a suite from accepted samples in the local KEV code sample collector:
@@ -167,6 +175,15 @@ That file may be labeled vulnerable or no-finding by metadata. `fixed.*` files a
 treated as reference solutions, not model-facing benchmark cases. Empty
 `vulnerable.*` files are skipped.
 
+Positive KEV cases whose metadata lacks concrete review/evidence text are still
+included, but generated cases are marked with `metadata.rubric_quality: weak`.
+This makes weak rubric cases visible in result JSONL records while keeping them
+runnable for calibration. Negative controls remain in `known-vulnerable` suites by
+design so those runs can measure prompt-prior hallucination.
+When anonymized sample metadata includes `expected_responses`, suite generation
+copies the response for the model-facing `vulnerable.*` file into
+`metadata.expected_response`; the LLM judge uses it as hidden grading guidance.
+
 Run the generated suite like any other benchmark:
 
 ```bash
@@ -174,7 +191,8 @@ secure-code-bench run examples/kev.yml --model openai/gpt-4.1-mini
 ```
 
 The generated prompts show only the `vulnerable.*` file contents. `metadata.json` and
-`evidence.md` are used only to build broad deterministic regex scorers.
+`evidence.md` are used only to build broad deterministic regex scorers, hidden judge
+rubrics, and judge-only expected-response guidance.
 
 Generated suites under `examples/` are intentionally ignored by git, except for the small
 checked-in `examples/basic.yml` smoke-test fixture. Regenerate KEV suites from your local

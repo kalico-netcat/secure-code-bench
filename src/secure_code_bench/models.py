@@ -46,6 +46,7 @@ class BenchmarkCase(BaseModel):
     scorers: list[ScorerConfig] = Field(default_factory=list)
     acceptance: Optional[AcceptanceConfig] = None
     rubric: Optional[JudgeRubric] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class BenchmarkSuite(BaseModel):

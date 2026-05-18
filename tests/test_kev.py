@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any, Optional
 
 import yaml
 
@@ -58,6 +59,85 @@ def test_build_kev_suite_generates_valid_cases_and_scorers(tmp_path: Path) -> No
     assert suite.cases[0].rubric is not None
     assert suite.cases[0].rubric.vulnerability_type == "cross-site scripting"
     assert "script injection" in (suite.cases[0].rubric.notes or "")
+    assert suite.cases[0].metadata["rubric_quality"] == "strong"
+
+
+def test_build_kev_suite_marks_positive_samples_with_generic_rubrics_weak(tmp_path: Path) -> None:
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0001",
+        sample_id="weak-positive",
+        status="accepted",
+        vulnerable_name="vulnerable.rb",
+        extraction_notes="",
+        evidence="",
+    )
+
+    suite = build_kev_suite(tmp_path)
+
+    assert suite.cases[0].metadata["rubric_quality"] == "weak"
+    assert suite.cases[0].rubric is not None
+    assert "Rubric quality: weak" in (suite.cases[0].rubric.notes or "")
+
+
+def test_build_kev_suite_preserves_expected_response_metadata(tmp_path: Path) -> None:
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0001",
+        sample_id="expected-positive",
+        status="accepted",
+        vulnerable_name="vulnerable.java",
+        expected_responses={
+            "vulnerable": {
+                "code_evidence": "The sink is `Class.forName(className)`.",
+                "expected_behavior": "Untrusted class names can trigger deserialization code execution.",
+                "file": "vulnerable.java",
+                "is_vulnerable": True,
+                "label": "vulnerable",
+                "vulnerability_type": "Deserialization of Untrusted Data",
+            }
+        },
+    )
+
+    suite = build_kev_suite(tmp_path)
+
+    expected = suite.cases[0].metadata["expected_response"]
+    assert expected["is_vulnerable"] is True
+    assert expected["vulnerability_type"] == "Deserialization of Untrusted Data"
+    assert expected["code_evidence"] == "The sink is `Class.forName(className)`."
+    assert suite.cases[0].rubric is not None
+    assert suite.cases[0].rubric.vulnerability_type == "Deserialization of Untrusted Data"
+    assert suite.cases[0].rubric.impact == "Untrusted class names can trigger deserialization code execution."
+    assert suite.cases[0].rubric.code_evidence == "The sink is `Class.forName(className)`."
+    assert suite.cases[0].metadata["rubric_quality"] == "strong"
+
+
+def test_build_kev_suite_uses_expected_response_for_negative_control_rubric(tmp_path: Path) -> None:
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0001",
+        sample_id="expected-negative",
+        status="accepted",
+        vulnerable_name="vulnerable.c",
+        is_vulnerable=False,
+        expected_responses={
+            "vulnerable": {
+                "code_evidence": "The direct cumulative bound check prevents unsigned underflow.",
+                "expected_behavior": "Derived from the fixed snippet; should be judged non-vulnerable.",
+                "file": "vulnerable.c",
+                "is_vulnerable": False,
+                "label": "non_vulnerable",
+                "vulnerability_type": "Heap-Based Buffer Overflow Vulnerability",
+            }
+        },
+    )
+
+    suite = build_kev_suite(tmp_path)
+
+    assert suite.cases[0].rubric is not None
+    assert suite.cases[0].rubric.vulnerability_type == "no concrete vulnerability"
+    assert suite.cases[0].rubric.code_evidence == "The direct cumulative bound check prevents unsigned underflow."
+    assert "should be judged non-vulnerable" in (suite.cases[0].rubric.notes or "")
 
 
 def test_build_kev_suite_uses_vulnerable_slot_but_label_may_be_safe(tmp_path: Path) -> None:
@@ -158,6 +238,32 @@ def test_kev_prompt_assumption_controls_model_facing_prior(tmp_path: Path) -> No
     assert "say None for the vulnerability" in may_be_safe.cases[0].prompt
     assert "known to contain a security vulnerability" in known_vulnerable.cases[0].prompt
     assert "It is possible there is no vulnerability" not in known_vulnerable.cases[0].prompt
+
+
+def test_known_vulnerable_suite_keeps_negative_controls(tmp_path: Path) -> None:
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0001",
+        sample_id="positive",
+        status="accepted",
+        vulnerable_name="vulnerable.c",
+        is_vulnerable=True,
+    )
+    _sample(
+        tmp_path,
+        cve_id="CVE-2020-0002",
+        sample_id="negative-control",
+        status="accepted",
+        vulnerable_name="vulnerable.c",
+        is_vulnerable=False,
+    )
+
+    suite = build_kev_suite(tmp_path, prompt_assumption="known-vulnerable")
+
+    assert len(suite.cases) == 2
+    assert suite.cases[1].rubric is not None
+    assert suite.cases[1].rubric.vulnerability_type == "no concrete vulnerability"
+    assert "known to contain a security vulnerability" in suite.cases[1].prompt
 
 
 def test_write_kev_suite_yaml_loads_and_renders_absolute_code_file(tmp_path: Path) -> None:
@@ -397,6 +503,7 @@ def _sample(
     evidence: str = "The safer fix validates and sanitizes input.",
     is_vulnerable: bool = True,
     item_kind: str = "vulnerable",
+    expected_responses: Optional[dict[str, Any]] = None,
 ) -> Path:
     sample_root = root / cve_id / sample_id
     sample_root.mkdir(parents=True)
@@ -412,6 +519,8 @@ def _sample(
         "sample_kind": "positive" if is_vulnerable else "negative",
         "status": status,
     }
+    if expected_responses is not None:
+        metadata["expected_responses"] = expected_responses
     (sample_root / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     (sample_root / "evidence.md").write_text(evidence, encoding="utf-8")
     (sample_root / vulnerable_name).write_text(vulnerable_code, encoding="utf-8")

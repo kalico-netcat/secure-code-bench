@@ -47,6 +47,7 @@ def run_suite(
                         passed=False,
                         acceptance=accept_deterministic([]),
                         metadata={
+                            **case.metadata,
                             "error": str(exc),
                             "error_type": type(exc).__name__,
                             "score_count": 0,
@@ -89,7 +90,7 @@ def run_suite(
                     scores=scores,
                     passed=acceptance.passed,
                     acceptance=acceptance,
-                    metadata={"score_count": len(scores)},
+                    metadata={**case.metadata, "score_count": len(scores)},
                 )
             )
             if progress is not None:

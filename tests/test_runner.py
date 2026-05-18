@@ -167,6 +167,7 @@ def test_run_suite_limits_cases_per_model(tmp_path: Path) -> None:
 
 def test_run_suite_uses_judge_score_when_enabled(tmp_path: Path) -> None:
     suite = _one_case_suite(tmp_path)
+    suite.cases[0].metadata = {"rubric_quality": "weak"}
     suite.cases[0].rubric = JudgeRubric(
         vulnerability_type="command injection",
         impact="attacker can execute commands",
@@ -188,6 +189,7 @@ def test_run_suite_uses_judge_score_when_enabled(tmp_path: Path) -> None:
     assert results[0].acceptance.required_dimensions_met is True
     assert results[0].scores[-1].name == "llm_judge"
     assert results[0].scores[-1].details["overall"] == 1.0
+    assert results[0].metadata["rubric_quality"] == "weak"
     assert provider.calls[0][0] == "tested-model"
     assert provider.calls[1][0] == "judge-model"
 
@@ -212,7 +214,7 @@ def test_run_suite_requires_judge_dimensions_even_with_high_overall(tmp_path: Pa
     assert results[0].passed is False
     assert results[0].acceptance is not None
     assert results[0].acceptance.mode == "judge"
-    assert results[0].acceptance.overall == 0.9
+    assert results[0].acceptance.overall == 0.875
     assert results[0].acceptance.required_dimensions_met is False
     assert "code_evidence" in results[0].acceptance.reason
 

@@ -217,3 +217,52 @@ cases:
     assert result.exit_code == 1
     assert "ERROR [missing_code_file]" in result.output
     assert "Validation completed with" in result.output
+
+
+def test_cli_report_prints_aggregated_summary(tmp_path: Path) -> None:
+    results_path = tmp_path / "results.jsonl"
+    records = [
+        {
+            "suite": "KEV code samples (accepted, may-be-safe)",
+            "case_id": "case-1",
+            "model": "model-a",
+            "status": "completed",
+            "prompt": "prompt",
+            "response": "response",
+            "scores": [
+                {
+                    "name": "llm_judge",
+                    "passed": True,
+                    "details": {"guardrails": [{}]},
+                }
+            ],
+            "passed": True,
+            "metadata": {
+                "rubric_quality": "strong",
+                "expected_response": {"is_vulnerable": True},
+            },
+        },
+        {
+            "suite": "KEV code samples (accepted, may-be-safe)",
+            "case_id": "case-2",
+            "model": "model-a",
+            "status": "judge_error",
+            "prompt": "prompt",
+            "response": "response",
+            "scores": [],
+            "passed": False,
+            "metadata": {"rubric_quality": "weak"},
+        },
+    ]
+    results_path.write_text(
+        "\n".join(json.dumps(record) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(cli.app, ["report", str(results_path)])
+
+    assert result.exit_code == 0
+    assert "Total records: 2" in result.output
+    assert "By model" in result.output
+    assert "By status" in result.output
+    assert "guardrails=1" in result.output

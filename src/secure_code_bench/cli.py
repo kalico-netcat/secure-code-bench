@@ -11,6 +11,7 @@ from secure_code_bench.kev import write_kev_suite
 from secure_code_bench.manifests import write_run_manifest
 from secure_code_bench.models import RunOptions
 from secure_code_bench.providers import RoutingProvider
+from secure_code_bench.reporting import build_report, format_report, load_jsonl_records
 from secure_code_bench.results import write_jsonl
 from secure_code_bench.runner import run_suite
 from secure_code_bench.suites import SuiteLoadError, load_suite
@@ -190,6 +191,21 @@ def validate(
     _print_validation_findings(findings)
     if any(finding.severity == "error" for finding in findings):
         raise typer.Exit(code=1)
+
+
+@app.command()
+def report(
+    results: list[Path] = typer.Argument(..., help="Path to one or more result JSONL files."),
+    json_output: bool = typer.Option(False, "--json", help="Print the report as JSON."),
+) -> None:
+    records = load_jsonl_records(results)
+    report_data = build_report(records)
+    if json_output:
+        import json
+
+        typer.echo(json.dumps(report_data, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_report(report_data))
 
 
 def _paired_output_path(output: Path, assumption: str) -> Path:

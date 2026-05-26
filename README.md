@@ -90,6 +90,15 @@ secure-code-bench run \
 
 If `--output` is omitted, each suite writes to `results/<suite-stem>.jsonl`.
 
+Aggregate one or more JSONL result files by model, suite, prompt assumption, rubric
+quality, vulnerable/control label, result status, and judge guardrail count:
+
+```bash
+secure-code-bench report results/kev-may-be-safe.jsonl results/kev-known-vulnerable.jsonl
+```
+
+Pass `--json` for machine-readable output.
+
 For OpenRouter `latest` aliases, omit the leading `~`; the runner adds it when sending
 requests:
 

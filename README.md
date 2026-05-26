@@ -38,6 +38,10 @@ secure-code-bench run examples/basic.yml --model openai/gpt-4.1-mini
 ```
 
 Results are written as JSONL, with one record per case/model pair.
+Each run also writes a sibling manifest such as `results/basic.manifest.json`
+containing the model list, suite hash, CLI options, timestamp, git state,
+provider routing mode, judge model, KEV generation metadata when available, and
+case counts.
 
 After generating a local KEV suite under `examples/` as described below, you can still
 override the request timeout for slower models. The default is already 600 seconds per

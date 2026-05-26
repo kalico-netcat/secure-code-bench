@@ -47,6 +47,8 @@ def test_build_kev_suite_generates_valid_cases_and_scorers(tmp_path: Path) -> No
     suite = build_kev_suite(tmp_path)
 
     assert suite.name == "KEV code samples (accepted, may-be-safe)"
+    assert suite.metadata["kev_generation"]["status"] == "accepted"
+    assert suite.metadata["kev_generation"]["prompt_assumption"] == "may-be-safe"
     assert suite.cases[0].id == "kev-sample-0001"
     assert suite.cases[0].code_files[0].is_absolute()
     assert any(scorer.type == "regex" for scorer in suite.cases[0].scorers)
@@ -220,6 +222,9 @@ def test_build_kev_suite_can_randomize_limited_selection_with_seed(tmp_path: Pat
     first_paths = [case.code_files[0] for case in first.cases]
     assert first_paths == [case.code_files[0] for case in second.cases]
     assert first_paths != [case.code_files[0] for case in ordered.cases]
+    assert first.metadata["kev_generation"]["limit"] == 3
+    assert first.metadata["kev_generation"]["randomize"] is True
+    assert first.metadata["kev_generation"]["seed"] == 7
 
 
 def test_kev_prompt_assumption_controls_model_facing_prior(tmp_path: Path) -> None:

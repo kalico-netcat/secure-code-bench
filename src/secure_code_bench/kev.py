@@ -149,7 +149,21 @@ def build_kev_suite(
         )
         for index, sample in enumerate(samples, start=1)
     ]
-    return BenchmarkSuite(name=f"KEV code samples ({status}, {prompt_assumption})", cases=cases)
+    return BenchmarkSuite(
+        name=f"KEV code samples ({status}, {prompt_assumption})",
+        cases=cases,
+        metadata={
+            "kev_generation": {
+                "status": status,
+                "limit": limit,
+                "anonymize": anonymize,
+                "prompt_assumption": prompt_assumption,
+                "randomize": randomize,
+                "seed": seed,
+                "samples_root": str(samples_root.expanduser().resolve()),
+            }
+        },
+    )
 
 
 def write_kev_suite(
@@ -431,6 +445,7 @@ def _fix_direction_for(sample: KevSample, fallback: str) -> str:
 def _suite_to_yaml(suite: BenchmarkSuite) -> str:
     data = {
         "name": suite.name,
+        **({"metadata": suite.metadata} if suite.metadata else {}),
         "cases": [
             {
                 "id": case.id,

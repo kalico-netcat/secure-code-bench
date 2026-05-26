@@ -8,6 +8,7 @@ import typer
 
 from secure_code_bench.env import load_dotenv
 from secure_code_bench.kev import write_kev_suite
+from secure_code_bench.manifests import write_run_manifest
 from secure_code_bench.models import RunOptions
 from secure_code_bench.providers import RoutingProvider
 from secure_code_bench.results import write_jsonl
@@ -87,7 +88,16 @@ def run(
             progress=_progress_callback(benchmark_suite, limit=limit),
         )
         output_path = write_jsonl(output, results)
+        manifest_path = write_run_manifest(
+            output_path=output_path,
+            suite=benchmark_suite,
+            models=model,
+            options=run_options,
+            timeout=timeout,
+            results=results,
+        )
         _print_summary(results, output_path)
+        typer.echo(f"Manifest: {manifest_path}")
 
 
 @app.command("kev-suite")

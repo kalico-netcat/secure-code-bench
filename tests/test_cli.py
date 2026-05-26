@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -59,6 +60,11 @@ cases:
     assert "done" in result.output
     assert "1/1 passed" in result.output
     assert output_path.exists()
+    manifest_path = tmp_path / "out.manifest.json"
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["models"] == ["openai/test-model"]
+    assert manifest["options"]["timeout"] == 300.0
 
 
 def test_cli_run_writes_multiple_jsonl(monkeypatch, tmp_path: Path) -> None:
@@ -106,6 +112,8 @@ cases:
     assert result.exit_code == 0, result.output
     assert out_a.exists()
     assert out_b.exists()
+    assert (tmp_path / "a.manifest.json").exists()
+    assert (tmp_path / "b.manifest.json").exists()
     assert "case-a" in out_a.read_text()
     assert "case-b" in out_b.read_text()
     assert result.output.count("1/1 passed") == 2

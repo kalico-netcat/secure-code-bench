@@ -55,6 +55,7 @@ class BenchmarkSuite(BaseModel):
     name: str
     cases: list[BenchmarkCase]
     path: Optional[Path] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunOptions(BaseModel):

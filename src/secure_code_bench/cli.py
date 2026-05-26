@@ -205,9 +205,13 @@ def _print_summary(results: list, output_path: Path) -> None:
     typer.echo("Summary")
     typer.echo("-------")
     for model, model_results in by_model.items():
-        passed = sum(1 for result in model_results if result.passed)
-        total = len(model_results)
-        typer.echo(f"{model}: {passed}/{total} passed")
+        completed = [result for result in model_results if result.status == "completed"]
+        passed = sum(1 for result in completed if result.passed)
+        errors = len(model_results) - len(completed)
+        summary = f"{model}: {passed}/{len(completed)} completed passed"
+        if errors:
+            summary += f" ({errors} error record(s))"
+        typer.echo(summary)
 
 
 def _print_validation_findings(findings: list[ValidationFinding]) -> None:

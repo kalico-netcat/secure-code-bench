@@ -58,7 +58,7 @@ cases:
     assert result.exit_code == 0
     assert "[1/1] openai/test-model :: case-1 ..." in result.output
     assert "done" in result.output
-    assert "1/1 passed" in result.output
+    assert "1/1 completed passed" in result.output
     assert output_path.exists()
     manifest_path = tmp_path / "out.manifest.json"
     assert manifest_path.exists()
@@ -116,7 +116,7 @@ cases:
     assert (tmp_path / "b.manifest.json").exists()
     assert "case-a" in out_a.read_text()
     assert "case-b" in out_b.read_text()
-    assert result.output.count("1/1 passed") == 2
+    assert result.output.count("1/1 completed passed") == 2
 
 
 def test_cli_run_mismatched_outputs_errors(monkeypatch, tmp_path: Path) -> None:

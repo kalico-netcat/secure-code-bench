@@ -73,6 +73,7 @@ cases:
     assert manifest["judge"] == {"enabled": True, "model": "judge-model"}
     assert manifest["kev_generation"]["seed"] == 42
     assert manifest["output"]["record_count_expected"] == 1
+    assert manifest["output"]["status_counts"] == {"completed": 1}
 
 
 def test_build_run_manifest_handles_suites_without_path() -> None:

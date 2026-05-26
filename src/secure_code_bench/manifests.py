@@ -82,6 +82,7 @@ def build_run_manifest(
             "format": "jsonl",
             "record_count": len(results),
             "record_count_expected": len(models) * selected_case_count,
+            "status_counts": _status_counts(results),
         },
     }
 
@@ -105,6 +106,11 @@ def _rubric_quality_counts(suite: BenchmarkSuite) -> dict[str, int]:
     counter = Counter(
         str(case.metadata.get("rubric_quality") or "unspecified") for case in suite.cases
     )
+    return dict(sorted(counter.items()))
+
+
+def _status_counts(results: list[RunResult]) -> dict[str, int]:
+    counter = Counter(result.status for result in results)
     return dict(sorted(counter.items()))
 
 

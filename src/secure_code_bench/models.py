@@ -92,6 +92,7 @@ class RunResult(BaseModel):
     suite: str
     case_id: str
     model: str
+    status: Literal["completed", "model_error", "judge_error", "scorer_error"] = "completed"
     prompt: str
     response: str
     scores: list[ScoreResult]

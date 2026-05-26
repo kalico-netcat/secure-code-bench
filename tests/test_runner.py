@@ -26,6 +26,13 @@ class FailingProvider:
         raise RuntimeError("permanent failure")
 
 
+class FailingJudgeProvider:
+    def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        if model == "judge-model":
+            raise RuntimeError("judge unavailable")
+        return ModelResponse(text="SQL injection")
+
+
 class JudgeProvider:
     def __init__(self) -> None:
         self.calls = []
@@ -129,6 +136,7 @@ def test_run_suite_retries_failed_model_call(tmp_path: Path) -> None:
 
     assert provider.calls == 2
     assert results[0].passed is True
+    assert results[0].status == "completed"
 
 
 def test_run_suite_records_error_and_continues(tmp_path: Path) -> None:
@@ -141,6 +149,7 @@ def test_run_suite_records_error_and_continues(tmp_path: Path) -> None:
     )
 
     assert len(results) == 1
+    assert results[0].status == "model_error"
     assert results[0].passed is False
     assert results[0].response == ""
     assert results[0].metadata["error_type"] == "RuntimeError"
@@ -184,6 +193,7 @@ def test_run_suite_uses_judge_score_when_enabled(tmp_path: Path) -> None:
     )
 
     assert results[0].passed is True
+    assert results[0].status == "completed"
     assert results[0].acceptance is not None
     assert results[0].acceptance.mode == "judge"
     assert results[0].acceptance.required_dimensions_met is True
@@ -217,6 +227,54 @@ def test_run_suite_requires_judge_dimensions_even_with_high_overall(tmp_path: Pa
     assert results[0].acceptance.overall == 0.875
     assert results[0].acceptance.required_dimensions_met is False
     assert "code_evidence" in results[0].acceptance.reason
+
+
+def test_run_suite_records_judge_error_status(tmp_path: Path) -> None:
+    suite = _one_case_suite(tmp_path)
+    suite.cases[0].rubric = JudgeRubric(
+        vulnerability_type="command injection",
+        impact="attacker can execute commands",
+        code_evidence="user input reaches command execution",
+        fix_direction="sanitize input and avoid shell execution",
+    )
+
+    results = run_suite(
+        suite,
+        ["tested-model"],
+        FailingJudgeProvider(),
+        options=RunOptions(judge=True, judge_model="judge-model"),
+    )
+
+    assert results[0].status == "judge_error"
+    assert results[0].passed is False
+    assert results[0].scores[-1].details["error_type"] == "RuntimeError"
+    assert results[0].acceptance is not None
+    assert results[0].acceptance.mode == "judge"
+
+
+def test_run_suite_records_scorer_error_status(tmp_path: Path) -> None:
+    (tmp_path / "sample.py").write_text("query = user_input\n", encoding="utf-8")
+    suite_path = tmp_path / "suite.yml"
+    suite_path.write_text(
+        """
+name: test
+cases:
+  - id: case-1
+    prompt: "{file:sample.py}"
+    code_files:
+      - sample.py
+    scorers:
+      - type: contains
+""",
+        encoding="utf-8",
+    )
+    suite = load_suite(suite_path)
+
+    results = run_suite(suite, ["model-a"], FakeProvider())
+
+    assert results[0].status == "scorer_error"
+    assert results[0].passed is False
+    assert results[0].metadata["error_type"] == "ScorerError"
 
 
 def test_run_suite_balanced_judge_accepts_partial_code_evidence(tmp_path: Path) -> None:

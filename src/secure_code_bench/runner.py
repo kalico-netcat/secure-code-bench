@@ -41,6 +41,7 @@ def run_suite(
                         suite=suite.name,
                         case_id=case.id,
                         model=model,
+                        status="model_error",
                         prompt=prompt,
                         response="",
                         scores=[],
@@ -55,8 +56,33 @@ def run_suite(
                     )
                 )
                 continue
-            scores = score_response(model_response.text, case.scorers)
+            try:
+                scores = score_response(model_response.text, case.scorers)
+            except Exception as exc:
+                if progress is not None:
+                    progress("error", model, current, total)
+                results.append(
+                    RunResult(
+                        suite=suite.name,
+                        case_id=case.id,
+                        model=model,
+                        status="scorer_error",
+                        prompt=prompt,
+                        response=model_response.text,
+                        scores=[],
+                        passed=False,
+                        acceptance=accept_deterministic([]),
+                        metadata={
+                            **case.metadata,
+                            "error": str(exc),
+                            "error_type": type(exc).__name__,
+                            "score_count": 0,
+                        },
+                    )
+                )
+                continue
             judge_score: Optional[ScoreResult] = None
+            status = "completed"
             if run_options.judge:
                 try:
                     judge_score = score_with_judge(
@@ -67,6 +93,7 @@ def run_suite(
                         options=run_options,
                     )
                 except Exception as exc:
+                    status = "judge_error"
                     judge_score = ScoreResult(
                         name="llm_judge",
                         passed=False,
@@ -85,6 +112,7 @@ def run_suite(
                     suite=suite.name,
                     case_id=case.id,
                     model=model,
+                    status=status,
                     prompt=prompt,
                     response=model_response.text,
                     scores=scores,

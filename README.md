@@ -38,6 +38,9 @@ secure-code-bench run examples/basic.yml --model openai/gpt-4.1-mini
 ```
 
 Results are written as JSONL, with one record per case/model pair.
+Each record includes a `status` field: `completed` for normal model answers,
+or `model_error`, `judge_error`, or `scorer_error` when infrastructure or
+scoring fails before a valid benchmark judgment can be made.
 Each run also writes a sibling manifest such as `results/basic.manifest.json`
 containing the model list, suite hash, CLI options, timestamp, git state,
 provider routing mode, judge model, KEV generation metadata when available, and

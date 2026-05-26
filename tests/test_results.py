@@ -29,4 +29,5 @@ def test_write_jsonl_writes_one_record_per_result(tmp_path: Path) -> None:
     assert len(lines) == 1
     record = json.loads(lines[0])
     assert record["case_id"] == "case"
+    assert record["status"] == "completed"
     assert record["acceptance"]["passed"] is True

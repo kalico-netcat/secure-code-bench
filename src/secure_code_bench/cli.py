@@ -12,7 +12,8 @@ from secure_code_bench.models import RunOptions
 from secure_code_bench.providers import RoutingProvider
 from secure_code_bench.results import write_jsonl
 from secure_code_bench.runner import run_suite
-from secure_code_bench.suites import load_suite
+from secure_code_bench.suites import SuiteLoadError, load_suite
+from secure_code_bench.validation import ValidationFinding, validate_suite_set
 
 app = typer.Typer(help="Run simple LLM benchmark suites.")
 
@@ -156,6 +157,31 @@ def kev_suite(
     typer.echo(f"Wrote {len(suite.cases)} KEV benchmark case(s) to {output_path}")
 
 
+@app.command()
+def validate(
+    suites: list[Path] = typer.Argument(..., help="Path to one or more suite YAML files."),
+) -> None:
+    loaded_suites = []
+    findings: list[ValidationFinding] = []
+    for suite_path in suites:
+        try:
+            loaded_suites.append(load_suite(suite_path))
+        except SuiteLoadError as exc:
+            findings.append(
+                ValidationFinding(
+                    severity="error",
+                    code="suite_load_error",
+                    message=str(exc),
+                    suite_path=suite_path,
+                )
+            )
+
+    findings.extend(validate_suite_set(loaded_suites))
+    _print_validation_findings(findings)
+    if any(finding.severity == "error" for finding in findings):
+        raise typer.Exit(code=1)
+
+
 def _paired_output_path(output: Path, assumption: str) -> Path:
     return output.with_name(f"{output.stem}-{assumption}{output.suffix or '.yml'}")
 
@@ -172,6 +198,31 @@ def _print_summary(results: list, output_path: Path) -> None:
         passed = sum(1 for result in model_results if result.passed)
         total = len(model_results)
         typer.echo(f"{model}: {passed}/{total} passed")
+
+
+def _print_validation_findings(findings: list[ValidationFinding]) -> None:
+    errors = sum(1 for finding in findings if finding.severity == "error")
+    warnings = sum(1 for finding in findings if finding.severity == "warning")
+    if not findings:
+        typer.echo("Validation passed: no findings.")
+        return
+
+    for finding in findings:
+        location = _finding_location(finding)
+        typer.echo(
+            f"{finding.severity.upper()} [{finding.code}]"
+            f"{f' {location}' if location else ''}: {finding.message}"
+        )
+    typer.echo(f"\nValidation completed with {errors} error(s) and {warnings} warning(s).")
+
+
+def _finding_location(finding: ValidationFinding) -> str:
+    parts = []
+    if finding.suite_path is not None:
+        parts.append(str(finding.suite_path))
+    if finding.case_id is not None:
+        parts.append(f"case {finding.case_id}")
+    return " :: ".join(parts)
 
 
 def _progress_callback(benchmark_suite, limit: Optional[int] = None):

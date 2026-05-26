@@ -165,3 +165,47 @@ def test_cli_run_help_shows_defaults() -> None:
     kev_help = CliRunner().invoke(cli.app, ["kev-suite", "--help"], env={"COLUMNS": "200"}).output
     assert "--prompt-assumption" in kev_help
     assert "--ordered" in kev_help
+
+
+def test_cli_validate_reports_success(tmp_path: Path) -> None:
+    (tmp_path / "sample.py").write_text("safe()\n", encoding="utf-8")
+    suite_path = tmp_path / "suite.yml"
+    suite_path.write_text(
+        """
+name: test
+cases:
+  - id: case-1
+    prompt: "{file:sample.py}"
+    code_files:
+      - sample.py
+    scorers: []
+""",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(cli.app, ["validate", str(suite_path)])
+
+    assert result.exit_code == 0
+    assert "Validation passed" in result.output
+
+
+def test_cli_validate_exits_nonzero_for_errors(tmp_path: Path) -> None:
+    suite_path = tmp_path / "suite.yml"
+    suite_path.write_text(
+        """
+name: test
+cases:
+  - id: case-1
+    prompt: "{file:missing.py}"
+    code_files:
+      - missing.py
+    scorers: []
+""",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(cli.app, ["validate", str(suite_path)])
+
+    assert result.exit_code == 1
+    assert "ERROR [missing_code_file]" in result.output
+    assert "Validation completed with" in result.output

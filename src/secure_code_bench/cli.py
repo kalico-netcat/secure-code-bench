@@ -9,7 +9,7 @@ import typer
 from secure_code_bench.env import load_dotenv
 from secure_code_bench.kev import write_kev_suite
 from secure_code_bench.models import RunOptions
-from secure_code_bench.providers import OpenRouterProvider
+from secure_code_bench.providers import RoutingProvider
 from secure_code_bench.results import write_jsonl
 from secure_code_bench.runner import run_suite
 from secure_code_bench.suites import load_suite
@@ -66,7 +66,7 @@ def run(
         outputs = [Path("results") / f"{suite.stem}.jsonl" for suite in suites]
 
     load_dotenv()
-    provider = OpenRouterProvider(timeout=timeout)
+    provider = RoutingProvider(timeout=timeout)
     run_options = RunOptions(
         temperature=temperature,
         max_tokens=max_tokens,

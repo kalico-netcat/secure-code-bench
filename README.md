@@ -22,6 +22,15 @@ Then edit `.env`:
 OPENROUTER_API_KEY=your-key-here
 ```
 
+You can also add first-party OpenAI and Anthropic keys. Models requested with the
+`openai:` and `anthropic:` prefixes use those first-party APIs when the matching key is
+available, and fall back to OpenRouter when it is not:
+
+```bash
+OPENAI_API_KEY=your-openai-key
+ANTHROPIC_API_KEY=your-anthropic-key
+```
+
 Run the small checked-in example suite:
 
 ```bash
@@ -36,8 +45,8 @@ model request:
 
 ```bash
 secure-code-bench run examples/kev.yml \
-  --model anthropic/claude-opus-4.7 \
-  --model openai/gpt-5.5 \
+  --model anthropic:claude-opus-4.7 \
+  --model openai:gpt-5.5 \
   --limit 3 \
   --timeout 900
 ```
@@ -48,13 +57,14 @@ local sample review metadata:
 
 ```bash
 secure-code-bench run examples/kev.yml \
-  --model anthropic/claude-opus-4.7 \
-  --model openai/gpt-5.5 \
+  --model anthropic:claude-opus-4.7 \
+  --model openai:gpt-5.5 \
   --limit 3 \
   --judge
 ```
 
-The default judge is `openai/gpt-mini-latest`. Override it with `--judge-model` when needed.
+The default judge is `openai/gpt-mini-latest` through OpenRouter. Override it with
+`--judge-model`, including first-party prefixes such as `openai:gpt-5.5` when needed.
 
 To run multiple suites in a single command, list each suite and pair each with an `--output`
 (paired by order). This is useful for running the KEV may-be-safe and known-vulnerable
@@ -66,8 +76,8 @@ secure-code-bench run \
   examples/kev-known-vulnerable.yml \
   --output results/kev-may-be-safe.jsonl \
   --output results/kev-known-vulnerable.jsonl \
-  --model anthropic/claude-opus-4.7 \
-  --model openai/gpt-5.5 \
+  --model anthropic:claude-opus-4.7 \
+  --model openai:gpt-5.5 \
   --judge
 ```
 
@@ -78,6 +88,14 @@ requests:
 
 ```bash
 secure-code-bench run examples/basic.yml --model anthropic/claude-sonnet-latest
+```
+
+Use slash IDs for direct OpenRouter routing, and colon IDs for first-party routing with
+OpenRouter fallback on missing keys:
+
+```bash
+secure-code-bench run examples/basic.yml --model openai:gpt-5.5
+secure-code-bench run examples/basic.yml --model anthropic:claude-sonnet-4-20250514
 ```
 
 ## Suite format
@@ -201,4 +219,6 @@ samples path before running them.
 ## Environment
 
 The CLI automatically loads `.env` from the current working directory before calling
-OpenRouter. Variables already set in your shell take precedence over `.env` values.
+model providers. Variables already set in your shell take precedence over `.env`
+values. Optional overrides include `OPENROUTER_BASE_URL`, `OPENAI_BASE_URL`,
+`ANTHROPIC_BASE_URL`, and `ANTHROPIC_VERSION`.

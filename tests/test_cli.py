@@ -34,7 +34,7 @@ cases:
         encoding="utf-8",
     )
     output_path = tmp_path / "out.jsonl"
-    monkeypatch.setattr(cli, "OpenRouterProvider", lambda timeout=60: FakeProvider(timeout=timeout))
+    monkeypatch.setattr(cli, "RoutingProvider", lambda timeout=60: FakeProvider(timeout=timeout))
 
     result = CliRunner().invoke(
         cli.app,
@@ -82,7 +82,7 @@ cases:
         )
     out_a = tmp_path / "a.jsonl"
     out_b = tmp_path / "b.jsonl"
-    monkeypatch.setattr(cli, "OpenRouterProvider", lambda timeout=60: FakeProvider(timeout=timeout))
+    monkeypatch.setattr(cli, "RoutingProvider", lambda timeout=60: FakeProvider(timeout=timeout))
 
     result = CliRunner().invoke(
         cli.app,
@@ -130,7 +130,7 @@ cases:
 """,
             encoding="utf-8",
         )
-    monkeypatch.setattr(cli, "OpenRouterProvider", lambda timeout=60: FakeProvider(timeout=timeout))
+    monkeypatch.setattr(cli, "RoutingProvider", lambda timeout=60: FakeProvider(timeout=timeout))
 
     result = CliRunner().invoke(
         cli.app,

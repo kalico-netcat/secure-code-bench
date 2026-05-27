@@ -19,6 +19,9 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+report = [
+  "plotly==6.6.0",
+]
 
 [project.scripts]
 secure-code-bench = "secure_code_bench.cli:app"

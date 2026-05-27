@@ -12,6 +12,7 @@ from secure_code_bench.manifests import write_run_manifest
 from secure_code_bench.models import RunOptions
 from secure_code_bench.providers import RoutingProvider
 from secure_code_bench.reporting import build_report, format_report, load_jsonl_records
+from secure_code_bench.reporting_html import HtmlReportError, write_html_report
 from secure_code_bench.results import write_jsonl
 from secure_code_bench.runner import run_suite
 from secure_code_bench.suites import SuiteLoadError, load_suite
@@ -197,9 +198,17 @@ def validate(
 def report(
     results: list[Path] = typer.Argument(..., help="Path to one or more result JSONL files."),
     json_output: bool = typer.Option(False, "--json", help="Print the report as JSON."),
+    html: Optional[Path] = typer.Option(None, "--html", help="Write an interactive HTML report."),
 ) -> None:
     records = load_jsonl_records(results)
     report_data = build_report(records)
+    if html is not None:
+        try:
+            html_path = write_html_report(report_data, html)
+        except HtmlReportError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        typer.echo(f"Wrote HTML report to {html_path}", err=json_output)
     if json_output:
         import json
 

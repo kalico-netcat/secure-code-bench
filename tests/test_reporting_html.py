@@ -1,0 +1,103 @@
+from pathlib import Path
+
+import pytest
+
+from secure_code_bench.reporting import build_report
+from secure_code_bench.reporting_html import HtmlReportError, report_chart_data, write_html_report
+
+
+def test_report_chart_data_prepares_plotly_series() -> None:
+    report = build_report(
+        [
+            _record(
+                model="model-a",
+                passed=True,
+                rubric_quality="strong",
+                dimensions={
+                    "vulnerability_type": 1,
+                    "impact": 1,
+                    "code_evidence": 1,
+                    "fix_direction": 0.5,
+                },
+            ),
+            _record(
+                model="model-b",
+                passed=False,
+                rubric_quality="weak",
+                guardrails=1,
+                dimensions={
+                    "vulnerability_type": 0,
+                    "impact": 0.5,
+                    "code_evidence": 0,
+                    "fix_direction": 0,
+                },
+            ),
+        ]
+    )
+
+    data = report_chart_data(report)
+
+    assert data["pass_rate_by_model"] == [
+        {"model": "model-a", "pass_rate": 100.0, "completed": 1, "records": 1},
+        {"model": "model-b", "pass_rate": 0.0, "completed": 1, "records": 1},
+    ]
+    assert data["failure_buckets_by_model"]["model-b"] == {"polarity_conflict": 1}
+    assert data["dimension_averages_by_model"]["model-a"]["fix_direction"] == 0.5
+    assert data["dimension_histograms"]["vulnerability_type"] == {
+        "0.0": 1,
+        "0.5": 0,
+        "1.0": 1,
+    }
+    assert data["guardrails_by_model"] == [
+        {"model": "model-a", "guardrails": 0},
+        {"model": "model-b", "guardrails": 1},
+    ]
+    assert data["strong_vs_all_pass_rate"] == [
+        {"label": "all cases", "pass_rate": 50.0},
+        {"label": "strong rubric", "pass_rate": 100.0},
+    ]
+
+
+def test_write_html_report_explains_missing_plotly(monkeypatch, tmp_path: Path) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("plotly"):
+            raise ImportError("missing plotly")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(HtmlReportError, match=r'python -m pip install -e "\.\[report\]"'):
+        write_html_report(build_report([]), tmp_path / "report.html")
+
+
+def _record(
+    model: str,
+    passed: bool,
+    rubric_quality: str,
+    dimensions: dict,
+    guardrails: int = 0,
+) -> dict:
+    return {
+        "suite": "suite",
+        "case_id": "case",
+        "model": model,
+        "status": "completed",
+        "prompt": "prompt",
+        "response": "response",
+        "scores": [
+            {
+                "name": "llm_judge",
+                "passed": passed,
+                "details": {
+                    "dimensions": dimensions,
+                    "guardrails": [{} for _ in range(guardrails)],
+                },
+            }
+        ],
+        "passed": passed,
+        "metadata": {"rubric_quality": rubric_quality},
+    }

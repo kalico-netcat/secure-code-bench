@@ -10,6 +10,12 @@ Install the package in editable mode:
 python -m pip install -e ".[dev]"
 ```
 
+Install optional HTML report dependencies when you want interactive charts:
+
+```bash
+python -m pip install -e ".[report]"
+```
+
 Create a local `.env` file with your OpenRouter API key:
 
 ```bash
@@ -100,6 +106,12 @@ secure-code-bench report results/kev-may-be-safe.jsonl results/kev-known-vulnera
 Pass `--json` for machine-readable output.
 Text reports include `failures[...]` buckets for common failure causes and
 `dims[...]` summaries for judge dimension averages and counts.
+Pass `--html` to write a standalone interactive Plotly report:
+
+```bash
+secure-code-bench report results/kev-may-be-safe.jsonl results/kev-known-vulnerable.jsonl \
+  --html results/report.html
+```
 
 For OpenRouter `latest` aliases, omit the leading `~`; the runner adds it when sending
 requests:

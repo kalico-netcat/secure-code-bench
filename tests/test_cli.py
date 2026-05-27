@@ -278,3 +278,55 @@ def test_cli_report_prints_aggregated_summary(tmp_path: Path) -> None:
     assert "guardrails=1" in result.output
     assert "failures[judge_error=1, passed=1]" in result.output
     assert "dims[vulnerability_type:avg=1.00,n=1" in result.output
+
+
+def test_cli_report_writes_html(monkeypatch, tmp_path: Path) -> None:
+    results_path = tmp_path / "results.jsonl"
+    html_path = tmp_path / "report.html"
+    results_path.write_text(
+        json.dumps(
+            {
+                "suite": "suite",
+                "case_id": "case",
+                "model": "model-a",
+                "status": "completed",
+                "prompt": "prompt",
+                "response": "response",
+                "scores": [],
+                "passed": True,
+                "metadata": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def fake_write_html_report(report_data, output_path):
+        output_path.write_text("<html>ok</html>", encoding="utf-8")
+        return output_path
+
+    monkeypatch.setattr(cli, "write_html_report", fake_write_html_report)
+
+    result = CliRunner().invoke(cli.app, ["report", str(results_path), "--html", str(html_path)])
+
+    assert result.exit_code == 0
+    assert html_path.read_text(encoding="utf-8") == "<html>ok</html>"
+    assert "Wrote HTML report" in result.output
+
+
+def test_cli_report_missing_plotly_errors(monkeypatch, tmp_path: Path) -> None:
+    results_path = tmp_path / "results.jsonl"
+    results_path.write_text("", encoding="utf-8")
+
+    def fake_write_html_report(report_data, output_path):
+        raise cli.HtmlReportError('Plotly is required. Install it with: python -m pip install -e ".[report]"')
+
+    monkeypatch.setattr(cli, "write_html_report", fake_write_html_report)
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["report", str(results_path), "--html", str(tmp_path / "report.html")],
+    )
+
+    assert result.exit_code == 1
+    assert 'python -m pip install -e ".[report]"' in result.output

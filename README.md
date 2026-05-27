@@ -98,6 +98,8 @@ secure-code-bench report results/kev-may-be-safe.jsonl results/kev-known-vulnera
 ```
 
 Pass `--json` for machine-readable output.
+Text reports include `failures[...]` buckets for common failure causes and
+`dims[...]` summaries for judge dimension averages and counts.
 
 For OpenRouter `latest` aliases, omit the leading `~`; the runner adds it when sending
 requests:

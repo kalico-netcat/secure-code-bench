@@ -7,6 +7,8 @@ from typing import Any, Iterable, Iterator
 
 
 ReportRow = dict[str, Any]
+DIMENSIONS = ["vulnerability_type", "impact", "code_evidence", "fix_direction"]
+DIMENSION_BUCKETS = ["0.0", "0.5", "1.0"]
 
 
 def load_jsonl_records(paths: Iterable[Path]) -> list[ReportRow]:
@@ -88,6 +90,8 @@ def _summarize(records: list[ReportRow]) -> dict[str, Any]:
         "pass_rate": passed / len(completed) if completed else None,
         "guardrail_count": sum(_guardrail_count(record) for record in records),
         "status_counts": dict(sorted(Counter(_status(record) for record in records).items())),
+        "failure_buckets": _failure_buckets(records),
+        "dimension_histograms": _dimension_histograms(records),
     }
 
 
@@ -97,11 +101,15 @@ def _format_summary(name: str, summary: dict[str, Any]) -> str:
     status_text = ", ".join(
         f"{status}={count}" for status, count in summary["status_counts"].items()
     )
+    failure_text = ", ".join(
+        f"{bucket}={count}" for bucket, count in summary["failure_buckets"].items()
+    )
+    dims_text = _format_dimension_histograms(summary["dimension_histograms"])
     return (
         f"{name}: records={summary['records']} completed={summary['completed']} "
         f"passed={summary['passed']} failed={summary['failed']} errors={summary['errors']} "
         f"pass_rate={pass_rate_text} guardrails={summary['guardrail_count']} "
-        f"statuses[{status_text}]"
+        f"statuses[{status_text}] failures[{failure_text}] dims[{dims_text}]"
     )
 
 
@@ -163,3 +171,102 @@ def _guardrail_count(record: ReportRow) -> int:
         if isinstance(guardrails, list):
             count += len(guardrails)
     return count
+
+
+def _failure_buckets(records: list[ReportRow]) -> dict[str, int]:
+    counter = Counter(_failure_bucket(record) for record in records)
+    return dict(sorted(counter.items()))
+
+
+def _failure_bucket(record: ReportRow) -> str:
+    status = _status(record)
+    if status != "completed":
+        return status
+    if bool(record.get("passed")):
+        return "passed"
+    if _guardrail_count(record):
+        return "polarity_conflict"
+
+    reason = _acceptance_reason(record).lower()
+    for dimension in DIMENSIONS:
+        if dimension in reason and "missing" in reason:
+            return f"missing_{dimension}"
+    if "below required" in reason or "below threshold" in reason:
+        return "overall_too_low"
+    return "failed_other"
+
+
+def _acceptance_reason(record: ReportRow) -> str:
+    acceptance = record.get("acceptance")
+    if isinstance(acceptance, dict):
+        reason = acceptance.get("reason")
+        if isinstance(reason, str):
+            return reason
+    return ""
+
+
+def _dimension_histograms(records: list[ReportRow]) -> dict[str, dict[str, Any]]:
+    histograms = {
+        dimension: {"counts": {bucket: 0 for bucket in DIMENSION_BUCKETS}, "average": None}
+        for dimension in DIMENSIONS
+    }
+    totals = {dimension: 0.0 for dimension in DIMENSIONS}
+    seen = {dimension: 0 for dimension in DIMENSIONS}
+
+    for record in records:
+        dimensions = _judge_dimensions(record)
+        for dimension in DIMENSIONS:
+            if dimension not in dimensions:
+                continue
+            score = _normalized_dimension_score(dimensions[dimension])
+            if score is None:
+                continue
+            bucket = f"{score:.1f}"
+            histograms[dimension]["counts"][bucket] += 1
+            totals[dimension] += score
+            seen[dimension] += 1
+
+    for dimension in DIMENSIONS:
+        if seen[dimension]:
+            histograms[dimension]["average"] = totals[dimension] / seen[dimension]
+    return histograms
+
+
+def _judge_dimensions(record: ReportRow) -> dict[str, Any]:
+    scores = record.get("scores")
+    if not isinstance(scores, list):
+        return {}
+    for score in scores:
+        if not isinstance(score, dict):
+            continue
+        details = score.get("details")
+        if not isinstance(details, dict):
+            continue
+        dimensions = details.get("dimensions")
+        if isinstance(dimensions, dict):
+            return dimensions
+    return {}
+
+
+def _normalized_dimension_score(value: object) -> float | None:
+    try:
+        score = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if score <= 0:
+        return 0.0
+    if score < 1:
+        return 0.5
+    return 1.0
+
+
+def _format_dimension_histograms(histograms: dict[str, dict[str, Any]]) -> str:
+    parts = []
+    for dimension in DIMENSIONS:
+        data = histograms.get(dimension, {})
+        counts = data.get("counts", {})
+        total = sum(int(counts.get(bucket, 0)) for bucket in DIMENSION_BUCKETS)
+        average = data.get("average")
+        average_text = "n/a" if average is None else f"{average:.2f}"
+        parts.append(f"{dimension}:avg={average_text},n={total}")
+    return "; ".join(parts)

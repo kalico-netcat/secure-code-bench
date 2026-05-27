@@ -233,10 +233,19 @@ def test_cli_report_prints_aggregated_summary(tmp_path: Path) -> None:
                 {
                     "name": "llm_judge",
                     "passed": True,
-                    "details": {"guardrails": [{}]},
+                    "details": {
+                        "guardrails": [{}],
+                        "dimensions": {
+                            "vulnerability_type": 1,
+                            "impact": 1,
+                            "code_evidence": 1,
+                            "fix_direction": 1,
+                        },
+                    },
                 }
             ],
             "passed": True,
+            "acceptance": {"mode": "judge", "passed": True, "reason": "correct"},
             "metadata": {
                 "rubric_quality": "strong",
                 "expected_response": {"is_vulnerable": True},
@@ -251,6 +260,7 @@ def test_cli_report_prints_aggregated_summary(tmp_path: Path) -> None:
             "response": "response",
             "scores": [],
             "passed": False,
+            "acceptance": {"mode": "judge", "passed": False, "reason": "judge unavailable"},
             "metadata": {"rubric_quality": "weak"},
         },
     ]
@@ -266,3 +276,5 @@ def test_cli_report_prints_aggregated_summary(tmp_path: Path) -> None:
     assert "By model" in result.output
     assert "By status" in result.output
     assert "guardrails=1" in result.output
+    assert "failures[judge_error=1, passed=1]" in result.output
+    assert "dims[vulnerability_type:avg=1.00,n=1" in result.output

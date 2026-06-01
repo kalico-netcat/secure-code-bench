@@ -69,6 +69,8 @@ def test_build_report_groups_key_benchmark_dimensions() -> None:
     assert report["by_model"]["model-b"]["status_counts"] == {"judge_error": 1}
     assert report["by_prompt_assumption"]["may-be-safe"]["records"] == 2
     assert report["by_prompt_assumption"]["known-vulnerable"]["records"] == 1
+    assert report["by_prompt_assumption_model"]["may-be-safe"]["model-a"]["records"] == 2
+    assert report["by_prompt_assumption_model"]["known-vulnerable"]["model-b"]["records"] == 1
     assert report["by_rubric_quality"]["strong"]["passed"] == 1
     assert report["by_rubric_quality"]["control"]["failed"] == 1
     assert report["by_vulnerability_label"]["vulnerable"]["records"] == 2

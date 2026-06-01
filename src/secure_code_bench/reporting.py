@@ -25,6 +25,7 @@ def build_report(records: list[ReportRow]) -> dict[str, Any]:
         "by_model": _group(records, "model"),
         "by_suite": _group(records, "suite"),
         "by_prompt_assumption": _group(records, _prompt_assumption),
+        "by_prompt_assumption_model": _nested_group(records, _prompt_assumption, "model"),
         "by_rubric_quality": _group(records, _rubric_quality),
         "by_vulnerability_label": _group(records, _vulnerability_label),
         "by_status": _group(records, _status),
@@ -76,6 +77,19 @@ def _group(records: list[ReportRow], key: str | Any) -> dict[str, dict[str, Any]
         group_key = key(record) if callable(key) else record.get(key)
         grouped.setdefault(str(group_key or "unknown"), []).append(record)
     return {name: _summarize(group_records) for name, group_records in grouped.items()}
+
+
+def _nested_group(
+    records: list[ReportRow], outer_key: str | Any, inner_key: str | Any
+) -> dict[str, dict[str, dict[str, Any]]]:
+    grouped: dict[str, list[ReportRow]] = {}
+    for record in records:
+        group_key = outer_key(record) if callable(outer_key) else record.get(outer_key)
+        grouped.setdefault(str(group_key or "unknown"), []).append(record)
+    return {
+        name: _group(group_records, inner_key)
+        for name, group_records in sorted(grouped.items())
+    }
 
 
 def _summarize(records: list[ReportRow]) -> dict[str, Any]:

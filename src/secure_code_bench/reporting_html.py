@@ -26,6 +26,7 @@ def write_html_report(report: dict[str, Any], output_path: Path) -> Path:
 def report_chart_data(report: dict[str, Any]) -> dict[str, Any]:
     return {
         "pass_rate_by_model": _pass_rate_by_model(report),
+        "pass_rate_by_prompt_assumption_model": _pass_rate_by_prompt_assumption_model(report),
         "failure_buckets_by_model": _failure_buckets_by_model(report),
         "dimension_averages_by_model": _dimension_averages_by_model(report),
         "dimension_histograms": _dimension_histograms(report),
@@ -50,6 +51,16 @@ def _build_figures(report: dict[str, Any], go, make_subplots) -> list:
     data = report_chart_data(report)
     figures = [
         _pass_rate_figure(data["pass_rate_by_model"], go),
+        _pass_rate_figure(
+            data["pass_rate_by_prompt_assumption_model"]["may-be-safe"],
+            go,
+            title="Pass rate by model (may-be-safe prompts)",
+        ),
+        _pass_rate_figure(
+            data["pass_rate_by_prompt_assumption_model"]["known-vulnerable"],
+            go,
+            title="Pass rate by model (known-vulnerable prompts)",
+        ),
         _failure_buckets_figure(data["failure_buckets_by_model"], go),
         _dimension_average_figure(data["dimension_averages_by_model"], go),
         _dimension_histogram_figure(data["dimension_histograms"], go),
@@ -108,6 +119,35 @@ def _pass_rate_by_model(report: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _pass_rate_by_prompt_assumption_model(report: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    groups = report.get("by_prompt_assumption_model", {})
+    models = sorted(report.get("by_model", {}))
+    return {
+        assumption: _pass_rate_rows(groups.get(assumption, {}), models=models)
+        for assumption in ("may-be-safe", "known-vulnerable")
+    }
+
+
+def _pass_rate_rows(
+    groups: dict[str, dict[str, Any]], models: list[str] | None = None
+) -> list[dict[str, Any]]:
+    rows = []
+    model_names = models if models is not None else sorted(groups)
+    for model in model_names:
+        summary = groups.get(model, {})
+        completed = summary.get("completed", 0)
+        pass_rate = None if completed == 0 else _percent(summary.get("pass_rate"))
+        rows.append(
+            {
+                "model": model,
+                "pass_rate": pass_rate,
+                "completed": completed,
+                "records": summary.get("records", 0),
+            }
+        )
+    return rows
+
+
 def _failure_buckets_by_model(report: dict[str, Any]) -> dict[str, dict[str, int]]:
     rows: dict[str, dict[str, int]] = {}
     for model, summary in sorted(report.get("by_model", {}).items()):
@@ -151,15 +191,26 @@ def _strong_vs_all_pass_rate(report: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _pass_rate_figure(rows: list[dict[str, Any]], go):
+def _pass_rate_figure(rows: list[dict[str, Any]], go, title: str = "Pass rate by model"):
     figure = go.Figure()
+    pass_rates = [row["pass_rate"] for row in rows]
     figure.add_bar(
         x=[row["model"] for row in rows],
-        y=[row["pass_rate"] for row in rows],
-        customdata=[[row["completed"], row["records"]] for row in rows],
-        hovertemplate="pass rate=%{y:.1f}%<br>completed=%{customdata[0]}<br>records=%{customdata[1]}<extra></extra>",
+        y=[0.0 if pass_rate is None else pass_rate for pass_rate in pass_rates],
+        customdata=[
+            [
+                "n/a" if row["pass_rate"] is None else f"{row['pass_rate']:.1f}%",
+                row["completed"],
+                row["records"],
+            ]
+            for row in rows
+        ],
+        text=["n/a" if pass_rate is None else f"{pass_rate:.1f}%" for pass_rate in pass_rates],
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate="pass rate=%{customdata[0]}<br>completed=%{customdata[1]}<br>records=%{customdata[2]}<extra></extra>",
     )
-    figure.update_layout(title="Pass rate by model", yaxis_title="Pass rate (%)")
+    figure.update_layout(title=title, yaxis_title="Pass rate (%)", yaxis_range=[0, 100])
     return figure
 
 

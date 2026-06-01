@@ -11,6 +11,7 @@ def test_report_chart_data_prepares_plotly_series() -> None:
         [
             _record(
                 model="model-a",
+                suite="KEV code samples (accepted, may-be-safe)",
                 passed=True,
                 rubric_quality="strong",
                 dimensions={
@@ -22,6 +23,7 @@ def test_report_chart_data_prepares_plotly_series() -> None:
             ),
             _record(
                 model="model-b",
+                suite="KEV code samples (accepted, may-be-safe)",
                 passed=False,
                 rubric_quality="weak",
                 guardrails=1,
@@ -32,21 +34,58 @@ def test_report_chart_data_prepares_plotly_series() -> None:
                     "fix_direction": 0,
                 },
             ),
+            _record(
+                model="model-a",
+                suite="KEV code samples (accepted, known-vulnerable)",
+                passed=False,
+                rubric_quality="weak",
+                dimensions={
+                    "vulnerability_type": 0.5,
+                    "impact": 0.5,
+                    "code_evidence": 0,
+                    "fix_direction": 0,
+                },
+            ),
+            _record(
+                model="model-b",
+                suite="KEV code samples (accepted, known-vulnerable)",
+                passed=True,
+                rubric_quality="weak",
+                dimensions={
+                    "vulnerability_type": 1,
+                    "impact": 1,
+                    "code_evidence": 1,
+                    "fix_direction": 1,
+                },
+            ),
         ]
     )
 
     data = report_chart_data(report)
 
     assert data["pass_rate_by_model"] == [
-        {"model": "model-a", "pass_rate": 100.0, "completed": 1, "records": 1},
-        {"model": "model-b", "pass_rate": 0.0, "completed": 1, "records": 1},
+        {"model": "model-a", "pass_rate": 50.0, "completed": 2, "records": 2},
+        {"model": "model-b", "pass_rate": 50.0, "completed": 2, "records": 2},
     ]
-    assert data["failure_buckets_by_model"]["model-b"] == {"polarity_conflict": 1}
-    assert data["dimension_averages_by_model"]["model-a"]["fix_direction"] == 0.5
+    assert data["pass_rate_by_prompt_assumption_model"] == {
+        "may-be-safe": [
+            {"model": "model-a", "pass_rate": 100.0, "completed": 1, "records": 1},
+            {"model": "model-b", "pass_rate": 0.0, "completed": 1, "records": 1},
+        ],
+        "known-vulnerable": [
+            {"model": "model-a", "pass_rate": 0.0, "completed": 1, "records": 1},
+            {"model": "model-b", "pass_rate": 100.0, "completed": 1, "records": 1},
+        ],
+    }
+    assert data["failure_buckets_by_model"]["model-b"] == {
+        "passed": 1,
+        "polarity_conflict": 1,
+    }
+    assert data["dimension_averages_by_model"]["model-a"]["fix_direction"] == 0.25
     assert data["dimension_histograms"]["vulnerability_type"] == {
         "0.0": 1,
-        "0.5": 0,
-        "1.0": 1,
+        "0.5": 1,
+        "1.0": 2,
     }
     assert data["guardrails_by_model"] == [
         {"model": "model-a", "guardrails": 0},
@@ -74,15 +113,60 @@ def test_write_html_report_explains_missing_plotly(monkeypatch, tmp_path: Path) 
         write_html_report(build_report([]), tmp_path / "report.html")
 
 
+def test_prompt_assumption_model_series_keeps_missing_models_visible() -> None:
+    report = build_report(
+        [
+            _record(
+                model="model-a",
+                suite="KEV code samples (accepted, may-be-safe)",
+                passed=True,
+                rubric_quality="strong",
+                dimensions={
+                    "vulnerability_type": 1,
+                    "impact": 1,
+                    "code_evidence": 1,
+                    "fix_direction": 1,
+                },
+            ),
+            _record(
+                model="model-b",
+                suite="KEV code samples (accepted, known-vulnerable)",
+                passed=False,
+                rubric_quality="strong",
+                dimensions={
+                    "vulnerability_type": 0,
+                    "impact": 0,
+                    "code_evidence": 0,
+                    "fix_direction": 0,
+                },
+            ),
+        ]
+    )
+
+    data = report_chart_data(report)
+
+    assert data["pass_rate_by_prompt_assumption_model"] == {
+        "may-be-safe": [
+            {"model": "model-a", "pass_rate": 100.0, "completed": 1, "records": 1},
+            {"model": "model-b", "pass_rate": None, "completed": 0, "records": 0},
+        ],
+        "known-vulnerable": [
+            {"model": "model-a", "pass_rate": None, "completed": 0, "records": 0},
+            {"model": "model-b", "pass_rate": 0.0, "completed": 1, "records": 1},
+        ],
+    }
+
+
 def _record(
     model: str,
+    suite: str,
     passed: bool,
     rubric_quality: str,
     dimensions: dict,
     guardrails: int = 0,
 ) -> dict:
     return {
-        "suite": "suite",
+        "suite": suite,
         "case_id": "case",
         "model": model,
         "status": "completed",

@@ -63,6 +63,7 @@ class RunOptions(BaseModel):
     max_tokens: Optional[int] = None
     retries: int = 0
     limit: Optional[int] = None
+    workers: int = 4
     judge: bool = False
     judge_model: str = "openai/gpt-mini-latest"
 

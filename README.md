@@ -47,6 +47,10 @@ Results are written as JSONL, with one record per case/model pair.
 Each record includes a `status` field: `completed` for normal model answers,
 or `model_error`, `judge_error`, or `scorer_error` when infrastructure or
 scoring fails before a valid benchmark judgment can be made.
+The JSONL output is flushed as records complete, so interrupted runs keep
+completed records on disk. On a clean finish, the file is rewritten in stable
+suite/model/case order; if interrupted, the manifest records how many expected
+records were actually written.
 Each run also writes a sibling manifest such as `results/basic.manifest.json`
 containing the model list, suite hash, CLI options, timestamp, git state,
 provider routing mode, judge model, KEV generation metadata when available, and
@@ -54,14 +58,16 @@ case counts.
 
 After generating a local KEV suite under `examples/` as described below, you can still
 override the request timeout for slower models. The default is already 600 seconds per
-model request:
+model request. Runs use 4 parallel model/case workers by default; pass `--workers 1`
+for serial execution when you need lower provider pressure or easier progress logs:
 
 ```bash
 secure-code-bench run examples/kev.yml \
   --model anthropic:claude-opus-4.7 \
   --model openai:gpt-5.5 \
   --limit 3 \
-  --timeout 900
+  --timeout 900 \
+  --workers 1
 ```
 
 For stronger KEV scoring, enable rubric judging. The tested model sees only the anonymized

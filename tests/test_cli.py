@@ -14,7 +14,19 @@ class FakeProvider:
     def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
         assert options.retries == 2
         assert options.limit == 1
+        assert options.workers in {1, 4}
         return ModelResponse(text="SQL injection should use parameterized queries")
+
+
+class InterruptingProvider:
+    def __init__(self, timeout: float = 60) -> None:
+        self.calls = 0
+
+    def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        self.calls += 1
+        if self.calls == 1:
+            return ModelResponse(text="SQL injection")
+        raise KeyboardInterrupt
 
 
 def test_cli_run_writes_jsonl(monkeypatch, tmp_path: Path) -> None:
@@ -52,12 +64,14 @@ cases:
             "2",
             "--limit",
             "1",
+            "--workers",
+            "1",
         ],
     )
 
     assert result.exit_code == 0
     assert "[1/1] openai/test-model :: case-1 ..." in result.output
-    assert "done" in result.output
+    assert "[1/1] openai/test-model :: case-1 done" in result.output
     assert "1/1 completed passed" in result.output
     assert output_path.exists()
     manifest_path = tmp_path / "out.manifest.json"
@@ -65,6 +79,56 @@ cases:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["models"] == ["openai/test-model"]
     assert manifest["options"]["timeout"] == 300.0
+    assert manifest["options"]["workers"] == 1
+
+
+def test_cli_run_writes_partial_results_on_interrupt(monkeypatch, tmp_path: Path) -> None:
+    suite_path = tmp_path / "suite.yml"
+    suite_path.write_text(
+        """
+name: test
+cases:
+  - id: case-1
+    prompt: first
+    scorers:
+      - type: contains
+        value: SQL injection
+  - id: case-2
+    prompt: second
+    scorers:
+      - type: contains
+        value: SQL injection
+""",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "out.jsonl"
+    monkeypatch.setattr(
+        cli,
+        "RoutingProvider",
+        lambda timeout=60: InterruptingProvider(timeout=timeout),
+    )
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "run",
+            str(suite_path),
+            "--model",
+            "openai/test-model",
+            "--output",
+            str(output_path),
+            "--workers",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 130
+    assert "Interrupted. Wrote 1 completed result(s)" in result.output
+    records = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    assert [record["case_id"] for record in records] == ["case-1"]
+    manifest = json.loads((tmp_path / "out.manifest.json").read_text(encoding="utf-8"))
+    assert manifest["output"]["record_count"] == 1
+    assert manifest["output"]["record_count_expected"] == 2
 
 
 def test_cli_run_writes_multiple_jsonl(monkeypatch, tmp_path: Path) -> None:
@@ -166,8 +230,10 @@ def test_cli_run_help_shows_defaults() -> None:
 
     assert result.exit_code == 0
     assert "[default: 3]" in result.output
+    assert "[default: 4]" in result.output
     assert "[default: 600.0]" in result.output
     assert "--continue-on-error" not in result.output
+    assert "--workers" in result.output
     assert "--judge" in result.output
     assert "openai/gpt-mini-latest" in result.output
     kev_help = CliRunner().invoke(cli.app, ["kev-suite", "--help"], env={"COLUMNS": "200"}).output

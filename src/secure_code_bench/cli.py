@@ -9,11 +9,11 @@ import typer
 from secure_code_bench.env import load_dotenv
 from secure_code_bench.kev import write_kev_suite
 from secure_code_bench.manifests import write_run_manifest
-from secure_code_bench.models import RunOptions
+from secure_code_bench.models import RunOptions, RunResult
 from secure_code_bench.providers import RoutingProvider
 from secure_code_bench.reporting import build_report, format_report, load_jsonl_records
 from secure_code_bench.reporting_html import HtmlReportError, write_html_report
-from secure_code_bench.results import write_jsonl
+from secure_code_bench.results import append_jsonl, reset_jsonl, write_jsonl
 from secure_code_bench.runner import run_suite
 from secure_code_bench.suites import SuiteLoadError, load_suite
 from secure_code_bench.validation import ValidationFinding, validate_suite_set
@@ -55,6 +55,7 @@ def run(
     timeout: float = typer.Option(600.0, help="HTTP timeout in seconds for each model request."),
     retries: int = typer.Option(3, help="Retries per model/case request after the first attempt."),
     limit: Optional[int] = typer.Option(None, help="Maximum number of suite cases to run per model."),
+    workers: int = typer.Option(4, help="Parallel model/case workers. Use 1 for serial runs."),
     judge: bool = typer.Option(False, "--judge", help="Use a hidden rubric and judge model for scoring."),
     judge_model: str = typer.Option(
         "openai/gpt-mini-latest",
@@ -76,20 +77,45 @@ def run(
         max_tokens=max_tokens,
         retries=retries,
         limit=limit,
+        workers=workers,
         judge=judge,
         judge_model=judge_model,
     )
 
     for suite_path, output in zip(suites, outputs):
         benchmark_suite = load_suite(suite_path)
-        results = run_suite(
-            benchmark_suite,
-            models=model,
-            provider=provider,
-            options=run_options,
-            progress=_progress_callback(benchmark_suite, limit=limit),
-        )
-        output_path = write_jsonl(output, results)
+        output_path = reset_jsonl(output)
+        partial_results: list[tuple[int, RunResult]] = []
+
+        def record_result(ordinal: int, result: RunResult) -> None:
+            partial_results.append((ordinal, result))
+            append_jsonl(output_path, result)
+
+        try:
+            results = run_suite(
+                benchmark_suite,
+                models=model,
+                provider=provider,
+                options=run_options,
+                progress=_progress_callback(benchmark_suite, limit=limit),
+                result_callback=record_result,
+            )
+        except KeyboardInterrupt:
+            results = [result for _, result in sorted(partial_results, key=lambda item: item[0])]
+            output_path = write_jsonl(output_path, results)
+            manifest_path = write_run_manifest(
+                output_path=output_path,
+                suite=benchmark_suite,
+                models=model,
+                options=run_options,
+                timeout=timeout,
+                results=results,
+            )
+            typer.echo(f"\nInterrupted. Wrote {len(results)} completed result(s) to {output_path}")
+            typer.echo(f"Manifest: {manifest_path}")
+            raise typer.Exit(code=130) from None
+
+        output_path = write_jsonl(output_path, results)
         manifest_path = write_run_manifest(
             output_path=output_path,
             suite=benchmark_suite,
@@ -271,10 +297,10 @@ def _progress_callback(benchmark_suite, limit: Optional[int] = None):
         case = ordered_cases[(current - 1) % len(ordered_cases)]
         prefix = f"[{current}/{total}] {model} :: {case.id}"
         if event == "start":
-            typer.echo(f"{prefix} ...", nl=False)
+            typer.echo(f"{prefix} ...")
         elif event == "finish":
-            typer.echo(" done")
+            typer.echo(f"{prefix} done")
         elif event == "error":
-            typer.echo(" failed")
+            typer.echo(f"{prefix} failed")
 
     return callback

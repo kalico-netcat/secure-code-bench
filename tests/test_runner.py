@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 
 from secure_code_bench.models import AcceptanceConfig, JudgeRubric, ModelResponse, RunOptions
@@ -61,6 +62,41 @@ class PartialJudgeProvider:
         return ModelResponse(text="The issue is command injection.")
 
 
+class BlockingProvider:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.active = 0
+        self.overlapped = threading.Event()
+        self.release = threading.Event()
+
+    def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        with self.lock:
+            self.active += 1
+            if self.active >= 2:
+                self.overlapped.set()
+                self.release.set()
+        try:
+            if not self.release.wait(timeout=1):
+                self.release.set()
+            return ModelResponse(text="SQL injection")
+        finally:
+            with self.lock:
+                self.active -= 1
+
+
+class OutOfOrderProvider:
+    def __init__(self) -> None:
+        self.second_finished = threading.Event()
+
+    def generate(self, model: str, prompt: str, options: RunOptions) -> ModelResponse:
+        if "first prompt" in prompt:
+            if not self.second_finished.wait(timeout=1):
+                raise RuntimeError("second prompt did not finish first")
+            return ModelResponse(text="SQL injection first")
+        self.second_finished.set()
+        return ModelResponse(text="SQL injection second")
+
+
 def test_run_suite_scores_each_model_and_case(tmp_path: Path) -> None:
     (tmp_path / "sample.py").write_text("query = user_input\n", encoding="utf-8")
     suite_path = tmp_path / "suite.yml"
@@ -114,6 +150,7 @@ cases:
         suite,
         ["model-a"],
         FakeProvider(),
+        options=RunOptions(workers=1),
         progress=lambda event, model, current, total: events.append((event, model, current, total)),
     )
 
@@ -164,7 +201,7 @@ def test_run_suite_limits_cases_per_model(tmp_path: Path) -> None:
         suite,
         ["model-a", "model-b"],
         FakeProvider(),
-        options=RunOptions(limit=2),
+        options=RunOptions(limit=2, workers=1),
         progress=lambda event, model, current, total: events.append((event, model, current, total)),
     )
 
@@ -172,6 +209,38 @@ def test_run_suite_limits_cases_per_model(tmp_path: Path) -> None:
     assert [result.case_id for result in results] == ["case-1", "case-2", "case-1", "case-2"]
     assert events[0] == ("start", "model-a", 1, 4)
     assert events[-1] == ("finish", "model-b", 4, 4)
+
+
+def test_run_suite_parallel_workers_overlap(tmp_path: Path) -> None:
+    suite = _multi_case_suite(tmp_path)
+    provider = BlockingProvider()
+
+    results = run_suite(
+        suite,
+        ["model-a"],
+        provider,
+        options=RunOptions(limit=2, workers=2),
+    )
+
+    assert len(results) == 2
+    assert provider.overlapped.is_set()
+
+
+def test_run_suite_preserves_result_order_when_parallel_tasks_finish_out_of_order(
+    tmp_path: Path,
+) -> None:
+    suite = _two_prompt_suite(tmp_path)
+    provider = OutOfOrderProvider()
+
+    results = run_suite(
+        suite,
+        ["model-a"],
+        provider,
+        options=RunOptions(workers=2),
+    )
+
+    assert [result.case_id for result in results] == ["case-1", "case-2"]
+    assert [result.response for result in results] == ["SQL injection first", "SQL injection second"]
 
 
 def test_run_suite_uses_judge_score_when_enabled(tmp_path: Path) -> None:
@@ -431,6 +500,28 @@ cases:
     prompt: "{file:sample3.py}"
     code_files:
       - sample3.py
+    scorers:
+      - type: contains
+        value: SQL injection
+""",
+        encoding="utf-8",
+    )
+    return load_suite(suite_path)
+
+
+def _two_prompt_suite(tmp_path: Path):
+    suite_path = tmp_path / "suite.yml"
+    suite_path.write_text(
+        """
+name: test
+cases:
+  - id: case-1
+    prompt: first prompt
+    scorers:
+      - type: contains
+        value: SQL injection
+  - id: case-2
+    prompt: second prompt
     scorers:
       - type: contains
         value: SQL injection

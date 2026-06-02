@@ -191,7 +191,8 @@ pass a no-vulnerability rubric. Guardrail overrides are recorded in
 
 ## KEV code samples
 
-Generate a suite from accepted samples in the local KEV code sample collector:
+Generate a suite from accepted samples in the KEV code sample collector project,
+[kalico-netcat/find-kev-code-samples](https://github.com/kalico-netcat/find-kev-code-samples):
 
 ```bash
 secure-code-bench kev-suite \

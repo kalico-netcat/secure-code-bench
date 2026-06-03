@@ -31,7 +31,6 @@ def report_chart_data(report: dict[str, Any]) -> dict[str, Any]:
         "dimension_averages_by_model": _dimension_averages_by_model(report),
         "dimension_histograms": _dimension_histograms(report),
         "guardrails_by_model": _guardrails_by_model(report),
-        "strong_vs_all_pass_rate": _strong_vs_all_pass_rate(report),
     }
 
 
@@ -66,9 +65,6 @@ def _build_figures(report: dict[str, Any], go, make_subplots) -> list:
         _dimension_histogram_figure(data["dimension_histograms"], go),
         _guardrail_figure(data["guardrails_by_model"], go),
     ]
-    strong_vs_all = data["strong_vs_all_pass_rate"]
-    if strong_vs_all:
-        figures.append(_strong_vs_all_figure(strong_vs_all, go))
     return figures
 
 
@@ -177,18 +173,16 @@ def _dimension_histograms(report: dict[str, Any]) -> dict[str, dict[str, int]]:
 def _guardrails_by_model(report: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
     for model, summary in sorted(report.get("by_model", {}).items()):
-        rows.append({"model": model, "guardrails": summary.get("guardrail_count", 0)})
+        buckets = summary.get("guardrail_buckets", {})
+        rows.append(
+            {
+                "model": model,
+                "missed_vulnerability": _count(buckets, "missed_vulnerability"),
+                "hallucinated_vulnerability": _count(buckets, "hallucinated_vulnerability"),
+                "unknown": _count(buckets, "unknown"),
+            }
+        )
     return rows
-
-
-def _strong_vs_all_pass_rate(report: dict[str, Any]) -> list[dict[str, Any]]:
-    rubric_quality = report.get("by_rubric_quality", {})
-    if "strong" not in rubric_quality:
-        return []
-    return [
-        {"label": "all cases", "pass_rate": _percent(report.get("overall", {}).get("pass_rate"))},
-        {"label": "strong rubric", "pass_rate": _percent(rubric_quality["strong"].get("pass_rate"))},
-    ]
 
 
 def _pass_rate_figure(rows: list[dict[str, Any]], go, title: str = "Pass rate by model"):
@@ -254,22 +248,30 @@ def _dimension_histogram_figure(rows: dict[str, dict[str, int]], go):
 
 def _guardrail_figure(rows: list[dict[str, Any]], go):
     figure = go.Figure()
-    figure.add_bar(
-        x=[row["model"] for row in rows],
-        y=[row["guardrails"] for row in rows],
+    labels = {
+        "missed_vulnerability": "Missed vulnerability",
+        "hallucinated_vulnerability": "Hallucinated vulnerability",
+        "unknown": "Unknown guardrail",
+    }
+    for bucket, label in labels.items():
+        figure.add_bar(
+            x=[row["model"] for row in rows],
+            y=[row[bucket] for row in rows],
+            name=label,
+        )
+    figure.update_layout(
+        title="Guardrail count by model",
+        barmode="stack",
+        yaxis_title="Guardrails",
     )
-    figure.update_layout(title="Guardrail count by model", yaxis_title="Guardrails")
     return figure
 
 
-def _strong_vs_all_figure(rows: list[dict[str, Any]], go):
-    figure = go.Figure()
-    figure.add_bar(
-        x=[row["label"] for row in rows],
-        y=[row["pass_rate"] for row in rows],
-    )
-    figure.update_layout(title="Strong-rubric pass rate vs all cases", yaxis_title="Pass rate (%)")
-    return figure
+def _count(values: object, key: str) -> int:
+    if not isinstance(values, dict):
+        return 0
+    value = values.get(key, 0)
+    return int(value) if isinstance(value, int) else 0
 
 
 def _percent(value: object) -> float:

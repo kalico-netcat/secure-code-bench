@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -26,7 +28,10 @@ def test_report_chart_data_prepares_plotly_series() -> None:
                 suite="KEV code samples (accepted, may-be-safe)",
                 passed=False,
                 rubric_quality="weak",
-                guardrails=1,
+                guardrails=[
+                    {"expected": "vulnerability", "observed": "no_finding"},
+                    {"expected": "no_vulnerability", "observed": "asserted_vulnerability"},
+                ],
                 dimensions={
                     "vulnerability_type": 0,
                     "impact": 0.5,
@@ -88,13 +93,20 @@ def test_report_chart_data_prepares_plotly_series() -> None:
         "1.0": 2,
     }
     assert data["guardrails_by_model"] == [
-        {"model": "model-a", "guardrails": 0},
-        {"model": "model-b", "guardrails": 1},
+        {
+            "model": "model-a",
+            "missed_vulnerability": 0,
+            "hallucinated_vulnerability": 0,
+            "unknown": 0,
+        },
+        {
+            "model": "model-b",
+            "missed_vulnerability": 1,
+            "hallucinated_vulnerability": 1,
+            "unknown": 0,
+        },
     ]
-    assert data["strong_vs_all_pass_rate"] == [
-        {"label": "all cases", "pass_rate": 50.0},
-        {"label": "strong rubric", "pass_rate": 100.0},
-    ]
+    assert "strong_vs_all_pass_rate" not in data
 
 
 def test_write_html_report_explains_missing_plotly(monkeypatch, tmp_path: Path) -> None:
@@ -163,8 +175,9 @@ def _record(
     passed: bool,
     rubric_quality: str,
     dimensions: dict,
-    guardrails: int = 0,
+    guardrails: int | list[dict[str, str]] = 0,
 ) -> dict:
+    guardrail_details = [{} for _ in range(guardrails)] if isinstance(guardrails, int) else guardrails
     return {
         "suite": suite,
         "case_id": "case",
@@ -178,7 +191,7 @@ def _record(
                 "passed": passed,
                 "details": {
                     "dimensions": dimensions,
-                    "guardrails": [{} for _ in range(guardrails)],
+                    "guardrails": guardrail_details,
                 },
             }
         ],

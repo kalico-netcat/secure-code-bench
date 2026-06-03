@@ -103,6 +103,7 @@ def _summarize(records: list[ReportRow]) -> dict[str, Any]:
         "errors": len(records) - len(completed),
         "pass_rate": passed / len(completed) if completed else None,
         "guardrail_count": sum(_guardrail_count(record) for record in records),
+        "guardrail_buckets": _guardrail_buckets(records),
         "status_counts": dict(sorted(Counter(_status(record) for record in records).items())),
         "failure_buckets": _failure_buckets(records),
         "dimension_histograms": _dimension_histograms(records),
@@ -171,10 +172,21 @@ def _vulnerability_label(record: ReportRow) -> str:
 
 
 def _guardrail_count(record: ReportRow) -> int:
+    return sum(_guardrail_buckets_for_record(record).values())
+
+
+def _guardrail_buckets(records: list[ReportRow]) -> dict[str, int]:
+    counter: Counter[str] = Counter()
+    for record in records:
+        counter.update(_guardrail_buckets_for_record(record))
+    return dict(sorted(counter.items()))
+
+
+def _guardrail_buckets_for_record(record: ReportRow) -> Counter[str]:
     scores = record.get("scores")
     if not isinstance(scores, list):
-        return 0
-    count = 0
+        return Counter()
+    counter: Counter[str] = Counter()
     for score in scores:
         if not isinstance(score, dict):
             continue
@@ -183,8 +195,21 @@ def _guardrail_count(record: ReportRow) -> int:
             continue
         guardrails = details.get("guardrails")
         if isinstance(guardrails, list):
-            count += len(guardrails)
-    return count
+            counter.update(_guardrail_bucket(guardrail) for guardrail in guardrails)
+    return counter
+
+
+def _guardrail_bucket(guardrail: object) -> str:
+    if not isinstance(guardrail, dict):
+        return "unknown"
+    if guardrail.get("expected") == "vulnerability" and guardrail.get("observed") == "no_finding":
+        return "missed_vulnerability"
+    if (
+        guardrail.get("expected") == "no_vulnerability"
+        and guardrail.get("observed") == "asserted_vulnerability"
+    ):
+        return "hallucinated_vulnerability"
+    return "unknown"
 
 
 def _failure_buckets(records: list[ReportRow]) -> dict[str, int]:

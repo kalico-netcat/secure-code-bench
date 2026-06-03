@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Optional
@@ -13,7 +15,7 @@ def test_build_report_groups_key_benchmark_dimensions() -> None:
             passed=True,
             rubric_quality="strong",
             is_vulnerable=True,
-            guardrails=1,
+            guardrails=[{"expected": "vulnerability", "observed": "no_finding"}],
             dimensions={
                 "vulnerability_type": 1,
                 "impact": 1,
@@ -54,6 +56,10 @@ def test_build_report_groups_key_benchmark_dimensions() -> None:
     assert report["overall"]["passed"] == 1
     assert report["overall"]["errors"] == 1
     assert report["overall"]["guardrail_count"] == 3
+    assert report["overall"]["guardrail_buckets"] == {
+        "missed_vulnerability": 1,
+        "unknown": 2,
+    }
     assert report["overall"]["failure_buckets"] == {
         "judge_error": 1,
         "missing_code_evidence": 1,
@@ -141,10 +147,11 @@ def _record(
     status: str = "completed",
     rubric_quality: Optional[str] = None,
     is_vulnerable: Optional[bool] = None,
-    guardrails: int = 0,
+    guardrails: int | list[dict[str, str]] = 0,
     acceptance_reason: str = "",
     dimensions: Optional[dict] = None,
 ) -> dict:
+    guardrail_details = [{} for _ in range(guardrails)] if isinstance(guardrails, int) else guardrails
     metadata = {}
     if rubric_quality is not None:
         metadata["rubric_quality"] = rubric_quality
@@ -162,7 +169,7 @@ def _record(
                 "name": "llm_judge",
                 "passed": passed,
                 "details": {
-                    "guardrails": [{} for _ in range(guardrails)],
+                    "guardrails": guardrail_details,
                     **({"dimensions": dimensions} if dimensions is not None else {}),
                 },
             }

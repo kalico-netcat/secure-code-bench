@@ -27,6 +27,7 @@ def test_report_chart_data_prepares_plotly_series() -> None:
                 model="model-b",
                 suite="KEV code samples (accepted, may-be-safe)",
                 passed=False,
+                is_vulnerable=False,
                 rubric_quality="weak",
                 guardrails=[
                     {"expected": "vulnerability", "observed": "no_finding"},
@@ -43,6 +44,7 @@ def test_report_chart_data_prepares_plotly_series() -> None:
                 model="model-a",
                 suite="KEV code samples (accepted, known-vulnerable)",
                 passed=False,
+                is_vulnerable=False,
                 rubric_quality="weak",
                 dimensions={
                     "vulnerability_type": 0.5,
@@ -68,11 +70,46 @@ def test_report_chart_data_prepares_plotly_series() -> None:
 
     data = report_chart_data(report)
 
-    assert data["pass_rate_by_model"] == [
+    assert [_without_label_rates(row) for row in data["pass_rate_by_model"]] == [
         {"model": "model-a", "pass_rate": 50.0, "completed": 2, "records": 2},
         {"model": "model-b", "pass_rate": 50.0, "completed": 2, "records": 2},
     ]
-    assert data["pass_rate_by_prompt_assumption_model"] == {
+    assert data["pass_rate_by_model"][0]["label_pass_rates"] == {
+        "vulnerable": {
+            "pass_rate": 100.0,
+            "stacked_pass_rate_contribution": 50.0,
+            "passed": 1,
+            "completed": 1,
+            "records": 1,
+        },
+        "control": {
+            "pass_rate": 0.0,
+            "stacked_pass_rate_contribution": 0.0,
+            "passed": 0,
+            "completed": 1,
+            "records": 1,
+        },
+    }
+    assert data["pass_rate_by_model"][1]["label_pass_rates"] == {
+        "vulnerable": {
+            "pass_rate": 100.0,
+            "stacked_pass_rate_contribution": 50.0,
+            "passed": 1,
+            "completed": 1,
+            "records": 1,
+        },
+        "control": {
+            "pass_rate": 0.0,
+            "stacked_pass_rate_contribution": 0.0,
+            "passed": 0,
+            "completed": 1,
+            "records": 1,
+        },
+    }
+    assert {
+        assumption: [_without_label_rates(row) for row in rows]
+        for assumption, rows in data["pass_rate_by_prompt_assumption_model"].items()
+    } == {
         "may-be-safe": [
             {"model": "model-a", "pass_rate": 100.0, "completed": 1, "records": 1},
             {"model": "model-b", "pass_rate": 0.0, "completed": 1, "records": 1},
@@ -81,6 +118,24 @@ def test_report_chart_data_prepares_plotly_series() -> None:
             {"model": "model-a", "pass_rate": 0.0, "completed": 1, "records": 1},
             {"model": "model-b", "pass_rate": 100.0, "completed": 1, "records": 1},
         ],
+    }
+    assert data["pass_rate_by_prompt_assumption_model"]["may-be-safe"][1][
+        "label_pass_rates"
+    ]["control"] == {
+        "pass_rate": 0.0,
+        "stacked_pass_rate_contribution": 0.0,
+        "passed": 0,
+        "completed": 1,
+        "records": 1,
+    }
+    assert data["pass_rate_by_prompt_assumption_model"]["known-vulnerable"][1][
+        "label_pass_rates"
+    ]["vulnerable"] == {
+        "pass_rate": 100.0,
+        "stacked_pass_rate_contribution": 100.0,
+        "passed": 1,
+        "completed": 1,
+        "records": 1,
     }
     assert data["failure_buckets_by_model"]["model-b"] == {
         "passed": 1,
@@ -92,20 +147,7 @@ def test_report_chart_data_prepares_plotly_series() -> None:
         "0.5": 1,
         "1.0": 2,
     }
-    assert data["guardrails_by_model"] == [
-        {
-            "model": "model-a",
-            "missed_vulnerability": 0,
-            "hallucinated_vulnerability": 0,
-            "unknown": 0,
-        },
-        {
-            "model": "model-b",
-            "missed_vulnerability": 1,
-            "hallucinated_vulnerability": 1,
-            "unknown": 0,
-        },
-    ]
+    assert "guardrails_by_model" not in data
     assert "strong_vs_all_pass_rate" not in data
 
 
@@ -157,7 +199,10 @@ def test_prompt_assumption_model_series_keeps_missing_models_visible() -> None:
 
     data = report_chart_data(report)
 
-    assert data["pass_rate_by_prompt_assumption_model"] == {
+    assert {
+        assumption: [_without_label_rates(row) for row in rows]
+        for assumption, rows in data["pass_rate_by_prompt_assumption_model"].items()
+    } == {
         "may-be-safe": [
             {"model": "model-a", "pass_rate": 100.0, "completed": 1, "records": 1},
             {"model": "model-b", "pass_rate": None, "completed": 0, "records": 0},
@@ -166,6 +211,15 @@ def test_prompt_assumption_model_series_keeps_missing_models_visible() -> None:
             {"model": "model-a", "pass_rate": None, "completed": 0, "records": 0},
             {"model": "model-b", "pass_rate": 0.0, "completed": 1, "records": 1},
         ],
+    }
+    assert data["pass_rate_by_prompt_assumption_model"]["known-vulnerable"][1][
+        "label_pass_rates"
+    ]["vulnerable"] == {
+        "pass_rate": 0.0,
+        "stacked_pass_rate_contribution": 0.0,
+        "passed": 0,
+        "completed": 1,
+        "records": 1,
     }
 
 
@@ -176,6 +230,7 @@ def _record(
     rubric_quality: str,
     dimensions: dict,
     guardrails: int | list[dict[str, str]] = 0,
+    is_vulnerable: bool = True,
 ) -> dict:
     guardrail_details = [{} for _ in range(guardrails)] if isinstance(guardrails, int) else guardrails
     return {
@@ -196,5 +251,12 @@ def _record(
             }
         ],
         "passed": passed,
-        "metadata": {"rubric_quality": rubric_quality},
+        "metadata": {
+            "expected_response": {"is_vulnerable": is_vulnerable},
+            "rubric_quality": rubric_quality,
+        },
     }
+
+
+def _without_label_rates(row: dict) -> dict:
+    return {key: value for key, value in row.items() if key != "label_pass_rates"}

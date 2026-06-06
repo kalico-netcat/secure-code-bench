@@ -30,7 +30,6 @@ def report_chart_data(report: dict[str, Any]) -> dict[str, Any]:
         "failure_buckets_by_model": _failure_buckets_by_model(report),
         "dimension_averages_by_model": _dimension_averages_by_model(report),
         "dimension_histograms": _dimension_histograms(report),
-        "guardrails_by_model": _guardrails_by_model(report),
     }
 
 
@@ -63,7 +62,6 @@ def _build_figures(report: dict[str, Any], go, make_subplots) -> list:
         _failure_buckets_figure(data["failure_buckets_by_model"], go),
         _dimension_average_figure(data["dimension_averages_by_model"], go),
         _dimension_histogram_figure(data["dimension_histograms"], go),
-        _guardrail_figure(data["guardrails_by_model"], go),
     ]
     return figures
 
@@ -103,6 +101,7 @@ def _render_html(report: dict[str, Any], figures: list, pio) -> str:
 
 def _pass_rate_by_model(report: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
+    label_groups = report.get("by_model_vulnerability_label", {})
     for model, summary in sorted(report.get("by_model", {}).items()):
         rows.append(
             {
@@ -110,6 +109,9 @@ def _pass_rate_by_model(report: dict[str, Any]) -> list[dict[str, Any]]:
                 "pass_rate": _percent(summary.get("pass_rate")),
                 "completed": summary.get("completed", 0),
                 "records": summary.get("records", 0),
+                "label_pass_rates": _label_pass_rates(
+                    label_groups.get(model, {}), summary.get("completed", 0)
+                ),
             }
         )
     return rows
@@ -117,18 +119,26 @@ def _pass_rate_by_model(report: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _pass_rate_by_prompt_assumption_model(report: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     groups = report.get("by_prompt_assumption_model", {})
+    label_groups = report.get("by_prompt_assumption_model_vulnerability_label", {})
     models = sorted(report.get("by_model", {}))
     return {
-        assumption: _pass_rate_rows(groups.get(assumption, {}), models=models)
+        assumption: _pass_rate_rows(
+            groups.get(assumption, {}),
+            models=models,
+            label_groups=label_groups.get(assumption, {}),
+        )
         for assumption in ("may-be-safe", "known-vulnerable")
     }
 
 
 def _pass_rate_rows(
-    groups: dict[str, dict[str, Any]], models: list[str] | None = None
+    groups: dict[str, dict[str, Any]],
+    models: list[str] | None = None,
+    label_groups: dict[str, dict[str, dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]]:
     rows = []
     model_names = models if models is not None else sorted(groups)
+    label_groups = label_groups or {}
     for model in model_names:
         summary = groups.get(model, {})
         completed = summary.get("completed", 0)
@@ -139,6 +149,7 @@ def _pass_rate_rows(
                 "pass_rate": pass_rate,
                 "completed": completed,
                 "records": summary.get("records", 0),
+                "label_pass_rates": _label_pass_rates(label_groups.get(model, {}), completed),
             }
         )
     return rows
@@ -170,41 +181,55 @@ def _dimension_histograms(report: dict[str, Any]) -> dict[str, dict[str, int]]:
     }
 
 
-def _guardrails_by_model(report: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = []
-    for model, summary in sorted(report.get("by_model", {}).items()):
-        buckets = summary.get("guardrail_buckets", {})
-        rows.append(
-            {
-                "model": model,
-                "missed_vulnerability": _count(buckets, "missed_vulnerability"),
-                "hallucinated_vulnerability": _count(buckets, "hallucinated_vulnerability"),
-                "unknown": _count(buckets, "unknown"),
-            }
-        )
-    return rows
-
-
 def _pass_rate_figure(rows: list[dict[str, Any]], go, title: str = "Pass rate by model"):
     figure = go.Figure()
     pass_rates = [row["pass_rate"] for row in rows]
-    figure.add_bar(
+    labels = (("vulnerable", "Vulnerable"), ("control", "Non-vulnerable"))
+    for label_key, label in labels:
+        figure.add_bar(
+            x=[row["model"] for row in rows],
+            y=[
+                row.get("label_pass_rates", {})
+                .get(label_key, {})
+                .get("stacked_pass_rate_contribution", 0.0)
+                for row in rows
+            ],
+            name=label,
+            customdata=[
+                [
+                    _format_rate(
+                        row.get("label_pass_rates", {}).get(label_key, {}).get("pass_rate")
+                    ),
+                    row.get("label_pass_rates", {}).get(label_key, {}).get("passed", 0),
+                    row.get("label_pass_rates", {}).get(label_key, {}).get("completed", 0),
+                    row["completed"],
+                    row["records"],
+                ]
+                for row in rows
+            ],
+            hovertemplate=(
+                f"{label} pass rate=%{{customdata[0]}}<br>"
+                "passed=%{customdata[1]}<br>"
+                "label completed=%{customdata[2]}<br>"
+                "completed=%{customdata[3]}<br>"
+                "records=%{customdata[4]}<extra></extra>"
+            ),
+        )
+    figure.add_scatter(
         x=[row["model"] for row in rows],
         y=[0.0 if pass_rate is None else pass_rate for pass_rate in pass_rates],
-        customdata=[
-            [
-                "n/a" if row["pass_rate"] is None else f"{row['pass_rate']:.1f}%",
-                row["completed"],
-                row["records"],
-            ]
-            for row in rows
-        ],
+        mode="text",
         text=["n/a" if pass_rate is None else f"{pass_rate:.1f}%" for pass_rate in pass_rates],
-        textposition="outside",
-        cliponaxis=False,
-        hovertemplate="pass rate=%{customdata[0]}<br>completed=%{customdata[1]}<br>records=%{customdata[2]}<extra></extra>",
+        textposition="top center",
+        showlegend=False,
+        hoverinfo="skip",
     )
-    figure.update_layout(title=title, yaxis_title="Pass rate (%)", yaxis_range=[0, 100])
+    figure.update_layout(
+        title=title,
+        barmode="stack",
+        yaxis_title="Pass rate (%)",
+        yaxis_range=[0, 100],
+    )
     return figure
 
 
@@ -246,32 +271,29 @@ def _dimension_histogram_figure(rows: dict[str, dict[str, int]], go):
     return figure
 
 
-def _guardrail_figure(rows: list[dict[str, Any]], go):
-    figure = go.Figure()
-    labels = {
-        "missed_vulnerability": "Missed vulnerability",
-        "hallucinated_vulnerability": "Hallucinated vulnerability",
-        "unknown": "Unknown guardrail",
-    }
-    for bucket, label in labels.items():
-        figure.add_bar(
-            x=[row["model"] for row in rows],
-            y=[row[bucket] for row in rows],
-            name=label,
-        )
-    figure.update_layout(
-        title="Guardrail count by model",
-        barmode="stack",
-        yaxis_title="Guardrails",
-    )
-    return figure
+def _label_pass_rates(
+    groups: dict[str, dict[str, Any]], total_completed: object
+) -> dict[str, dict[str, Any]]:
+    completed_total = total_completed if isinstance(total_completed, int) else 0
+    rows: dict[str, dict[str, Any]] = {}
+    for label in ("vulnerable", "control"):
+        summary = groups.get(label, {})
+        completed = summary.get("completed", 0)
+        passed = summary.get("passed", 0)
+        rows[label] = {
+            "pass_rate": None if completed == 0 else _percent(summary.get("pass_rate")),
+            "stacked_pass_rate_contribution": (
+                (passed / completed_total) * 100 if completed_total else 0.0
+            ),
+            "passed": passed,
+            "completed": completed,
+            "records": summary.get("records", 0),
+        }
+    return rows
 
 
-def _count(values: object, key: str) -> int:
-    if not isinstance(values, dict):
-        return 0
-    value = values.get(key, 0)
-    return int(value) if isinstance(value, int) else 0
+def _format_rate(value: object) -> str:
+    return "n/a" if value is None else f"{float(value):.1f}%"
 
 
 def _percent(value: object) -> float:

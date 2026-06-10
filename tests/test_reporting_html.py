@@ -137,10 +137,7 @@ def test_report_chart_data_prepares_plotly_series() -> None:
         "completed": 1,
         "records": 1,
     }
-    assert data["failure_buckets_by_model"]["model-b"] == {
-        "passed": 1,
-        "polarity_conflict": 1,
-    }
+    assert "failure_buckets_by_model" not in data
     assert data["dimension_averages_by_model"]["model-a"]["fix_direction"] == 0.25
     assert data["dimension_histograms"]["vulnerability_type"] == {
         "0.0": 1,

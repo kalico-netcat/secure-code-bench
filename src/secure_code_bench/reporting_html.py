@@ -27,7 +27,6 @@ def report_chart_data(report: dict[str, Any]) -> dict[str, Any]:
     return {
         "pass_rate_by_model": _pass_rate_by_model(report),
         "pass_rate_by_prompt_assumption_model": _pass_rate_by_prompt_assumption_model(report),
-        "failure_buckets_by_model": _failure_buckets_by_model(report),
         "dimension_averages_by_model": _dimension_averages_by_model(report),
         "dimension_histograms": _dimension_histograms(report),
     }
@@ -59,7 +58,6 @@ def _build_figures(report: dict[str, Any], go, make_subplots) -> list:
             go,
             title="Pass rate by model (known-vulnerable prompts)",
         ),
-        _failure_buckets_figure(data["failure_buckets_by_model"], go),
         _dimension_average_figure(data["dimension_averages_by_model"], go),
         _dimension_histogram_figure(data["dimension_histograms"], go),
     ]
@@ -155,13 +153,6 @@ def _pass_rate_rows(
     return rows
 
 
-def _failure_buckets_by_model(report: dict[str, Any]) -> dict[str, dict[str, int]]:
-    rows: dict[str, dict[str, int]] = {}
-    for model, summary in sorted(report.get("by_model", {}).items()):
-        rows[model] = dict(summary.get("failure_buckets", {}))
-    return rows
-
-
 def _dimension_averages_by_model(report: dict[str, Any]) -> dict[str, dict[str, float | None]]:
     rows: dict[str, dict[str, float | None]] = {}
     for model, summary in sorted(report.get("by_model", {}).items()):
@@ -230,16 +221,6 @@ def _pass_rate_figure(rows: list[dict[str, Any]], go, title: str = "Pass rate by
         yaxis_title="Pass rate (%)",
         yaxis_range=[0, 100],
     )
-    return figure
-
-
-def _failure_buckets_figure(rows: dict[str, dict[str, int]], go):
-    figure = go.Figure()
-    models = list(rows)
-    buckets = sorted({bucket for values in rows.values() for bucket in values})
-    for bucket in buckets:
-        figure.add_bar(x=models, y=[rows[model].get(bucket, 0) for model in models], name=bucket)
-    figure.update_layout(title="Failure buckets by model", barmode="stack", yaxis_title="Records")
     return figure
 
 
